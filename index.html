@@ -1,1151 +1,367 @@
-<!doctype html>
-<html lang="fa" dir="rtl">
+<!DOCTYPE html>
+<html lang="fa">
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
-  <title>دفتر معاملات E2EE (آفلاین + سینک)</title>
-
-  <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#1f2937"/>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>اپلیکیشن مالی (PWA Offline + E2EE)</title>
+  <link rel="manifest" href="./manifest.json" />
+  <meta name="theme-color" content="#2196f3"/>
 
   <style>
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial; margin:0; background:#0b1220; color:#e5e7eb;}
-    header{position:sticky; top:0; background:#0f172a; padding:12px 14px; border-bottom:1px solid #1f2937;}
-    .row{display:flex; gap:10px; flex-wrap:wrap; align-items:center;}
-    .pill{padding:4px 10px; border-radius:999px; background:#111827; border:1px solid #1f2937; font-size:12px;}
-    .pill.ok{border-color:#14532d; background:#052e16;}
-    .pill.warn{border-color:#78350f; background:#2a1506;}
-    .pill.bad{border-color:#7f1d1d; background:#2a0707;}
-    main{padding:14px; max-width:980px; margin:0 auto;}
-    .card{background:#0f172a; border:1px solid #1f2937; border-radius:12px; padding:12px; margin:10px 0;}
-    label{font-size:12px; opacity:.9}
-    input,select,button,textarea{font:inherit}
-    input,select{width:100%; padding:10px; border-radius:10px; border:1px solid #1f2937; background:#0b1220; color:#e5e7eb;}
-    button{padding:10px 12px; border-radius:10px; border:1px solid #1f2937; background:#111827; color:#e5e7eb; cursor:pointer;}
-    button.primary{background:#1d4ed8; border-color:#1d4ed8;}
-    button.danger{background:#7f1d1d; border-color:#7f1d1d;}
-    button.ghost{background:transparent;}
-    .grid{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
-    @media (max-width:720px){ .grid{grid-template-columns:1fr;} }
-    ul{list-style:none; padding:0; margin:0}
-    li{padding:10px; border:1px solid #1f2937; border-radius:12px; margin:8px 0; background:#0b1220;}
-    .muted{opacity:.8; font-size:12px}
-    .actions{display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;}
-    .sep{height:1px; background:#1f2937; margin:10px 0;}
-    .karatLinks a{color:#93c5fd; text-decoration:none; margin-left:10px; font-size:12px}
-    .badge{font-size:12px; padding:3px 8px; border-radius:999px; border:1px solid #1f2937; display:inline-block; margin-left:6px;}
-    .badge.pending{border-color:#92400e; background:#2a1506;}
-    .badge.synced{border-color:#14532d; background:#052e16;}
-    .badge.conflict{border-color:#7f1d1d; background:#2a0707;}
-    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;}
+    body { font-family: sans-serif; padding: 1rem; direction: rtl; }
+    .hidden { display: none; }
+    label { display: block; margin-top: .5rem; }
+    input, select, button { margin-top: .2rem; padding: .4rem; width: 100%; box-sizing: border-box;}
+    #tx-table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+    #tx-table th, #tx-table td { border: 1px solid #ccc; padding: .4rem; text-align: center; }
   </style>
 </head>
-
 <body>
-<header>
-  <div class="row">
-    <div class="pill" id="netPill">وضعیت شبکه…</div>
-    <div class="pill" id="authPill">احراز هویت…</div>
-    <div class="pill" id="unlockPill">قفل…</div>
-    <div class="pill" id="syncPill">سینک…</div>
 
-    <button id="btnSync" class="primary">سینک</button>
-    <button id="btnConflicts" class="ghost">بررسی تعارض‌ها (<span id="confCount">0</span>)</button>
-    <button id="btnExport" class="ghost">Export CSV</button>
-  </div>
-</header>
-
-<main>
-  <div class="card" id="authCard">
-    <h3 style="margin:0 0 10px 0;">ورود (Supabase)</h3>
-    <div class="grid">
-      <div>
-        <label>ایمیل</label>
-        <input id="email" type="email" autocomplete="email" placeholder="you@example.com"/>
-      </div>
-      <div>
-        <label>رمز عبور (Supabase)</label>
-        <input id="password" type="password" autocomplete="current-password" placeholder="••••••••"/>
-      </div>
-    </div>
-    <div class="actions">
-      <button id="btnLogin" class="primary">ورود</button>
-      <button id="btnLogout" class="danger">خروج</button>
-    </div>
-    <div class="muted">برای آفلاین‌کار کردن، یک‌بار آنلاین وارد شوید تا نشست ذخیره شود.</div>
+  <!-- ۱) صفحه ورود -->
+  <div id="login-screen">
+    <h2>ورود با ایمیل و رمز</h2>
+    <input type="email" id="email" placeholder="ایمیل" />
+    <input type="password" id="password" placeholder="رمز عبور" />
+    <button id="btn-login">ورود</button>
   </div>
 
-  <div class="card" id="unlockCard">
-    <h3 style="margin:0 0 10px 0;">باز کردن رمزگذاری (E2EE)</h3>
-    <div class="grid">
-      <div>
-        <label>پس‌کد (کلید رمزگذاری/رمزگشایی) — فقط روی دستگاه شما استفاده می‌شود</label>
-        <input id="passcode" type="password" autocomplete="off" placeholder="یک پس‌کد قوی"/>
-      </div>
-      <div>
-        <label>راهنما</label>
-        <div class="muted">
-          پس‌کد را فراموش کنید، داده‌ها قابل بازیابی نیست. سرور فقط ciphertext نگه می‌دارد.
-        </div>
-      </div>
-    </div>
-    <div class="actions">
-      <button id="btnUnlock" class="primary">باز کن</button>
-      <button id="btnLock" class="ghost">قفل</button>
-    </div>
+  <!-- ۲) صفحه باز کردن داده‌های محلی -->
+  <div id="unlock-screen" class="hidden">
+    <h2>کد عبور محلی (برای رمزنگاری)</h2>
+    <input type="password" id="local-pass" placeholder="کد عبور دلخواه" />
+    <button id="btn-unlock">باز کردن</button>
   </div>
 
-  <div class="card" id="formCard" style="display:none;">
-    <h3 style="margin:0 0 10px 0;">ثبت / ویرایش تراکنش</h3>
+  <!-- ۳) صفحه اصلی اپ -->
+  <div id="app" class="hidden">
+    <h2>دفتر مالی</h2>
 
-    <div class="grid">
-      <div>
-        <label>عملیات</label>
-        <select id="side">
-          <option value="buy">خرید</option>
-          <option value="sell">فروش</option>
+    <form id="tx-form">
+      <label for="date">تاریخ:</label>
+      <input type="date" id="date" required />
+
+      <label for="type">نوع تراکنش:</label>
+      <select id="type" name="type" required>
+        <option value="" disabled selected>یک مورد انتخاب کنید</option>
+      </select>
+
+      <!-- فیلدهای داینامیک -->
+      <div class="field-showcase hidden">
+        <label>ویترین - توضیحات:</label>
+        <input type="text" id="showcase-desc" placeholder="مثلاً طلا ۱۸ عیار" />
+      </div>
+
+      <div class="field-molten hidden">
+        <label>آب‌شده - عیار پیشنهادی:</label>
+        <button type="button" class="set-750">۷۵۰</button>
+        <button type="button" class="set-740">۷۴۰</button>
+        <button type="button" class="set-900">۹۰۰</button>
+        <input type="number" id="molten-karat" placeholder="عیار دلخواه" />
+      </div>
+
+      <div class="field-bankCoin hidden">
+        <label>سکه بانکی:</label>
+        <select id="coin-bank-weight">
+          <option value="1">تمام (۸.۱۳۳ گرم)</option>
+          <option value="0.5">نیم (۴.۰۶۰ گرم)</option>
+          <option value="0.25">ربع (۲.۰۳۳ گرم)</option>
         </select>
+        <label>عیار (قفل‌شده روی ۹۰۰):</label>
+        <input type="number" value="900" readonly />
       </div>
 
-      <div>
-        <label>نوع دارایی</label>
-        <select id="assetType">
-          <option value="">— انتخاب —</option>
-          <option value="gold">طلا</option>
-          <option value="coin">سکه</option>
-          <option value="usd">دلار</option>
-        </select>
+      <div class="field-normalCoin hidden">
+        <label>سکه عادی - تعداد:</label>
+        <input type="number" id="coin-normal-count" min="1" value="1" />
+        <label>عیار (قفل‌شده روی ۹۰۰):</label>
+        <input type="number" value="900" readonly />
       </div>
-    </div>
 
-    <div class="grid" id="coinRow" style="display:none;">
-      <div>
-        <label>نوع سکه بانکی</label>
-        <select id="coinType">
-          <option value="full">تمام</option>
-          <option value="half">نیم</option>
-          <option value="quarter">ربع</option>
-        </select>
-        <div class="muted">با انتخاب سکه: وزن خودکار و عیار قفل روی ۹۰۰</div>
+      <div class="field-dollar hidden">
+        <label>مقدار دلار:</label>
+        <input type="number" id="dollar-amount" step="0.01" />
       </div>
-      <div></div>
-    </div>
 
-    <div class="grid">
-      <div>
-        <label>وزن (گرم)</label>
-        <input id="weight" inputmode="decimal" placeholder="مثلاً 12.34"/>
-      </div>
-      <div>
-        <label>عیار</label>
-        <input id="karat" inputmode="numeric" placeholder="مثلاً 750"/>
-        <div class="karatLinks muted">
-          پیشنهاد: <a href="#" data-k="750">750</a>
-          <a href="#" data-k="740">740</a>
-          <a href="#" data-k="900">900</a>
-        </div>
-      </div>
-    </div>
+      <label for="price">قیمت (ریال):</label>
+      <input type="text" id="price" required />
 
-    <div class="grid">
-      <div>
-        <label>قیمت</label>
-        <input id="price" inputmode="numeric" placeholder="مثلاً 1,234,000"/>
-        <div class="muted">با جداکننده سه‌رقمی وارد می‌شود.</div>
-      </div>
-      <div>
-        <label>یادداشت (اختیاری)</label>
-        <input id="note" placeholder="..."/>
-      </div>
-    </div>
+      <button type="submit">ثبت تراکنش</button>
+    </form>
 
-    <div class="actions">
-      <button id="btnSave" class="primary">ذخیره</button>
-      <button id="btnCancel" class="ghost">انصراف</button>
-    </div>
+    <button id="btn-sync">سینک</button>
+    <button id="btn-export">خروجی CSV</button>
+    <button id="btn-conflicts">بررسی تعارض‌ها</button>
 
-    <div class="muted" id="editHint"></div>
+    <table id="tx-table">
+      <thead>
+        <tr><th>تاریخ</th><th>نوع</th><th>جزئیات</th><th>قیمت</th><th>وضعیت</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
   </div>
 
-  <div class="card">
-    <h3 style="margin:0 0 10px 0;">لیست تراکنش‌ها</h3>
-    <div class="muted">نمایش از داده‌های محلی (IndexedDB). در حالت آفلاین هم کار می‌کند.</div>
-    <div class="sep"></div>
-    <ul id="list"></ul>
-  </div>
+  <!-- Supabase SDK -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js"></script>
 
-  <div class="card" id="conflictCard" style="display:none;">
-    <h3 style="margin:0 0 10px 0;">بررسی تعارض‌ها</h3>
-    <div class="muted">در تعارض، هر دو نسخه نگه داشته شده‌اند. می‌توانید یکی را حذف کنید یا هر دو را نگه دارید.</div>
-    <div class="sep"></div>
-    <div id="conflictList"></div>
-    <div class="actions">
-      <button id="btnCloseConflicts" class="ghost">بستن</button>
-    </div>
-  </div>
-</main>
+  <script>
+  //====== کانفیگ Supabase ======
+  const SUPABASE_URL  = "https://YOUR-URL.supabase.co";
+  const SUPABASE_ANON = "YOUR-ANON-KEY";
+  const supabase = supabaseJs.createClient(SUPABASE_URL, SUPABASE_ANON);
 
-<script type="module">
-  import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-
-  // ====== 1) تنظیمات Supabase ======
-  const SUPABASE_URL  = "https://aoujnczurxoqnvyqfxsa.supabase.co";
-  const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFvdWpuY3p1cnhvcW52eXFmeHNhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY3MDg2NjAsImV4cCI6MjEwMjI4NDY2MH0.feRmvkPByEFRKI-QQzNP4waGqmpXt1_xf7RKa9aI9Po";
-  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON);
-
-  // ====== 2) عناصر UI ======
-  const netPill = document.getElementById('netPill');
-  const authPill = document.getElementById('authPill');
-  const unlockPill = document.getElementById('unlockPill');
-  const syncPill = document.getElementById('syncPill');
-
-  const btnSync = document.getElementById('btnSync');
-  const btnConflicts = document.getElementById('btnConflicts');
-  const confCount = document.getElementById('confCount');
-  const btnExport = document.getElementById('btnExport');
-
-  const emailEl = document.getElementById('email');
-  const passEl  = document.getElementById('password');
-  const btnLogin = document.getElementById('btnLogin');
-  const btnLogout = document.getElementById('btnLogout');
-
-  const passcodeEl = document.getElementById('passcode');
-  const btnUnlock = document.getElementById('btnUnlock');
-  const btnLock = document.getElementById('btnLock');
-
-  const formCard = document.getElementById('formCard');
-  const listEl = document.getElementById('list');
-
-  const sideEl = document.getElementById('side');
-  const assetEl = document.getElementById('assetType');
-  const coinRow = document.getElementById('coinRow');
-  const coinTypeEl = document.getElementById('coinType');
-  const weightEl = document.getElementById('weight');
-  const karatEl = document.getElementById('karat');
-  const priceEl = document.getElementById('price');
-  const noteEl = document.getElementById('note');
-  const btnSave = document.getElementById('btnSave');
-  const btnCancel = document.getElementById('btnCancel');
-  const editHint = document.getElementById('editHint');
-
-  const conflictCard = document.getElementById('conflictCard');
-  const conflictList = document.getElementById('conflictList');
-  const btnCloseConflicts = document.getElementById('btnCloseConflicts');
-
-  // ====== 3) وضعیت برنامه ======
-  let user = null;
-  let cryptoKey = null;
-  let kdfSaltB64 = null;
-  let kdfIter = 200000;
-
-  let editingId = null;
-
-  function setPill(el, text, cls){
-    el.className = 'pill' + (cls ? ' ' + cls : '');
-    el.textContent = text;
-  }
-
-  function updateNetPill(){
-    setPill(netPill, navigator.onLine ? 'آنلاین' : 'آفلاین', navigator.onLine ? 'ok' : 'warn');
-  }
-  window.addEventListener('online', async()=>{ updateNetPill(); await syncNow(); });
-  window.addEventListener('offline', ()=>{ updateNetPill(); });
-
-  // ====== 4) ابزار Base64 + UUID ======
-  function uuid(){ return crypto.randomUUID(); }
-
-  function b64enc(bytes){
-    let s = '';
-    bytes.forEach(b=>s += String.fromCharCode(b));
-    return btoa(s);
-  }
-  function b64dec(b64){
-    const bin = atob(b64);
-    const bytes = new Uint8Array(bin.length);
-    for(let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
-    return bytes;
-  }
-
-  // ====== 5) E2EE: PBKDF2 -> AES-GCM ======
-  async function deriveKey(passcode, saltB64, iter){
-    const salt = b64dec(saltB64);
+  //====== E2EE با PBKDF2 و AES-GCM ======
+  async function deriveKey(password, salt) {
     const enc = new TextEncoder();
-    const material = await crypto.subtle.importKey(
-      'raw',
-      enc.encode(passcode),
-      { name:'PBKDF2' },
-      false,
-      ['deriveKey']
+    const keyMaterial = await crypto.subtle.importKey(
+      "raw", enc.encode(password), "PBKDF2", false, ["deriveKey"]
     );
-
     return crypto.subtle.deriveKey(
-      { name:'PBKDF2', salt, iterations: iter, hash:'SHA-256' },
-      material,
-      { name:'AES-GCM', length: 256 },
+      {
+        name: "PBKDF2",
+        salt: salt,
+        iterations: 100000,
+        hash: "SHA-256"
+      },
+      keyMaterial,
+      { name: "AES-GCM", length: 256 },
       false,
-      ['encrypt','decrypt']
+      ["encrypt","decrypt"]
     );
   }
 
-  async function encryptRecord(key, obj){
+  function generateSalt() {
+    return crypto.getRandomValues(new Uint8Array(16));
+  }
+
+  async function encryptRecord(key, obj) {
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const enc = new TextEncoder();
-    const pt = enc.encode(JSON.stringify(obj));
-    const ct = new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM', iv}, key, pt));
-    return { iv_b64: b64enc(iv), ciphertext_b64: b64enc(ct) };
+    const data = enc.encode(JSON.stringify(obj));
+    const cipher = await crypto.subtle.encrypt(
+      { name:"AES-GCM", iv }, key, data
+    );
+    return {
+      iv: Array.from(iv),
+      data: Array.from(new Uint8Array(cipher))
+    };
   }
 
-  async function decryptRecord(key, iv_b64, ciphertext_b64){
-    const iv = b64dec(iv_b64);
-    const ct = b64dec(ciphertext_b64);
-    const pt = await crypto.subtle.decrypt({name:'AES-GCM', iv}, key, ct);
-    const dec = new TextDecoder();
-    return JSON.parse(dec.decode(pt));
+  async function decryptRecord(key, record) {
+    const iv = new Uint8Array(record.iv);
+    const data = new Uint8Array(record.data);
+    const plain = await crypto.subtle.decrypt(
+      { name:"AES-GCM", iv }, key, data
+    );
+    return JSON.parse(new TextDecoder().decode(plain));
   }
 
-  // ====== 6) IndexedDB: records + queue + meta ======
-  const DB_NAME = 'e2ee_tx_db';
-  const DB_VER = 1;
-
-  function openDB(){
-    return new Promise((resolve,reject)=>{
-      const req = indexedDB.open(DB_NAME, DB_VER);
-      req.onupgradeneeded = () => {
-        const db = req.result;
-        if(!db.objectStoreNames.contains('records')){
-          db.createObjectStore('records', { keyPath:'id' });
-        }
-        if(!db.objectStoreNames.contains('queue')){
-          db.createObjectStore('queue', { keyPath:'qid' });
-        }
-        if(!db.objectStoreNames.contains('meta')){
-          db.createObjectStore('meta', { keyPath:'k' });
-        }
+  //====== IndexedDB برای ذخیره آفلاین ======
+  function openDB() {
+    return new Promise((res, rej) => {
+      const rq = indexedDB.open("ledger-db", 1);
+      rq.onupgradeneeded = e => {
+        const db = e.target.result;
+        const txStore = db.createObjectStore("transactions", { keyPath: "id", autoIncrement:true });
+        txStore.createIndex("status", "status");
+        db.createObjectStore("queue", { keyPath: "qid", autoIncrement:true });
+        db.createObjectStore("conflicts", { keyPath: "cid", autoIncrement:true });
       };
-      req.onsuccess = ()=>resolve(req.result);
-      req.onerror = ()=>reject(req.error);
+      rq.onsuccess = () => res(rq.result);
+      rq.onerror   = () => rej(rq.error);
     });
   }
 
-  function idbStore(db, name, mode='readonly'){
-    return db.transaction(name, mode).objectStore(name);
-  }
-
-  async function idbPut(storeName, val){
+  async function addLocal(tx) {
     const db = await openDB();
-    return new Promise((resolve,reject)=>{
-      const req = idbStore(db, storeName, 'readwrite').put(val);
-      req.onsuccess = ()=>resolve();
-      req.onerror = ()=>reject(req.error);
-    });
+    const t = db.transaction("transactions","readwrite");
+    t.objectStore("transactions").add(tx);
+    return t.complete;
   }
-  async function idbGet(storeName, key){
+
+  async function addToQueue(item) {
     const db = await openDB();
-    return new Promise((resolve,reject)=>{
-      const req = idbStore(db, storeName).get(key);
-      req.onsuccess = ()=>resolve(req.result);
-      req.onerror = ()=>reject(req.error);
-    });
+    const t = db.transaction("queue","readwrite");
+    t.objectStore("queue").add(item);
+    return t.complete;
   }
-  async function idbDel(storeName, key){
+
+  async function updateLocal(id, changes) {
     const db = await openDB();
-    return new Promise((resolve,reject)=>{
-      const req = idbStore(db, storeName, 'readwrite').delete(key);
-      req.onsuccess = ()=>resolve();
-      req.onerror = ()=>reject(req.error);
-    });
+    const t = db.transaction("transactions","readwrite");
+    const store = t.objectStore("transactions");
+    const rec = await store.get(id);
+    Object.assign(rec, changes);
+    store.put(rec);
+    return t.complete;
   }
-  async function idbGetAll(storeName){
+
+  async function getAllStore(storeName) {
     const db = await openDB();
-    return new Promise((resolve,reject)=>{
-      const req = idbStore(db, storeName).getAll();
-      req.onsuccess = ()=>resolve(req.result || []);
-      req.onerror = ()=>reject(req.error);
+    const tx = db.transaction(storeName,"readonly");
+    const store = tx.objectStore(storeName);
+    return new Promise(res => {
+      const all = [];
+      store.openCursor().onsuccess = e => {
+        const c = e.target.result;
+        if (!c) return res(all);
+        all.push(c.value);
+        c.continue();
+      };
     });
   }
 
-  // ====== 7) ابزار UI دارایی‌ها ======
-  const COIN_WEIGHTS = {
-    full: 8.133,
-    half: 4.0665,
-    quarter: 2.03325
-  };
-
-  function applyAssetRules(){
-    const t = assetEl.value;
-
-    if(t === 'coin'){
-      coinRow.style.display = '';
-      karatEl.value = '900';
-      karatEl.disabled = true;
-      const w = COIN_WEIGHTS[coinTypeEl.value] ?? COIN_WEIGHTS.full;
-      weightEl.value = String(w);
-      weightEl.disabled = true;
-    } else {
-      coinRow.style.display = 'none';
-      weightEl.disabled = false;
-      karatEl.disabled = false;
-      if(t === 'usd'){
-        karatEl.value = '0';
-        karatEl.disabled = true;
-        weightEl.value = '';
+  //====== Sync با Supabase ======
+  async function syncAll() {
+    const queue = await getAllStore("queue");
+    for (const item of queue) {
+      // ارسال داده به supabase
+      const { data, error } = await supabase
+        .from("transactions")
+        .insert(item.payload);
+      if (error) {
+        // در صورت conflict، داخل conflicts ذخیره کن
+        await (await openDB()).transaction("conflicts","readwrite")
+          .objectStore("conflicts").add({ local: item.payload, error });
+      } else {
+        // در صورت موفق، وضعیت local را به synced بروز کن
+        await updateLocal(item.localId, { status: "synced" });
       }
+      // حذف از queue
+      const db = await openDB();
+      db.transaction("queue","readwrite").objectStore("queue").delete(item.qid);
     }
-  }
-  assetEl.addEventListener('change', applyAssetRules);
-  coinTypeEl.addEventListener('change', applyAssetRules);
-
-  document.querySelectorAll('.karatLinks a').forEach(a=>{
-    a.addEventListener('click', (e)=>{
-      e.preventDefault();
-      if(karatEl.disabled) return;
-      karatEl.value = a.dataset.k;
-    });
-  });
-
-  function formatPriceWithCommas(raw){
-    const digits = raw.replace(/[^\d]/g,'');
-    if(!digits) return '';
-    return digits.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  }
-  priceEl.addEventListener('input', ()=>{
-    const caret = priceEl.selectionStart;
-    const before = priceEl.value;
-    const formatted = formatPriceWithCommas(before);
-    priceEl.value = formatted;
-    // iOS caret دقیق همیشه نیست؛ ساده نگه می‌داریم.
-    priceEl.setSelectionRange(formatted.length, formatted.length);
-  });
-
-  function resetForm(){
-    editingId = null;
-    editHint.textContent = '';
-    sideEl.value = 'buy';
-    assetEl.value = '';
-    coinTypeEl.value = 'full';
-    weightEl.value = '';
-    karatEl.value = '';
-    priceEl.value = '';
-    noteEl.value = '';
-    applyAssetRules();
+    renderTable();
   }
 
-  btnCancel.onclick = ()=>{
-    resetForm();
-  };
+  //====== UI & Dynamic Form ======
+  const types = [
+    { value: "showcase",   label: "ویترین"    },
+    { value: "molten",     label: "آب‌شده"    },
+    { value: "bankCoin",   label: "سکه بانکی" },
+    { value: "normalCoin", label: "سکه عادی"  },
+    { value: "dollar",     label: "دلار"      }
+  ];
 
-  // ====== 8) احراز هویت + گرفتن salt ======
-  async function refreshAuth(){
-    const { data } = await supabase.auth.getSession();
-    user = data.session?.user || null;
-    setPill(authPill, user ? ('وارد شده: ' + (user.email||'کاربر')) : 'خارج از حساب', user ? 'ok' : 'warn');
-    return user;
-  }
-
-  async function ensureKdfRow(){
-    if(!user) return;
-
-    // اگر آنلاین نیستیم و قبلاً ذخیره نشده، مشکل داریم.
-    // پس تلاش می‌کنیم از meta هم بخوانیم.
-    const cached = await idbGet('meta','kdf');
-    if(cached?.salt_b64 && cached?.iter){
-      kdfSaltB64 = cached.salt_b64;
-      kdfIter = cached.iter;
-    }
-
-    if(!navigator.onLine){
-      if(!kdfSaltB64) throw new Error('آفلاین هستید و salt قبلاً ذخیره نشده. یک‌بار آنلاین وارد شوید.');
-      return;
-    }
-
-    const { data, error } = await supabase
-      .from('user_kdf')
-      .select('salt_b64,iter')
-      .eq('user_id', user.id);
-
-    if(error) throw error;
-
-    if(data && data.length){
-      kdfSaltB64 = data[0].salt_b64;
-      kdfIter = data[0].iter;
-    } else {
-      const salt = crypto.getRandomValues(new Uint8Array(16));
-      kdfSaltB64 = b64enc(salt);
-      kdfIter = 200000;
-
-      const ins = await supabase.from('user_kdf').insert([{
-        user_id: user.id,
-        salt_b64: kdfSaltB64,
-        iter: kdfIter
-      }]);
-      if(ins.error) throw ins.error;
-    }
-
-    await idbPut('meta', { k:'kdf', salt_b64: kdfSaltB64, iter: kdfIter });
-  }
-
-  btnLogin.onclick = async()=>{
-    try{
-      const email = emailEl.value.trim();
-      const password = passEl.value;
-      if(!email || !password) return alert('ایمیل و رمز را وارد کنید.');
-
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if(error) throw error;
-
-      await refreshAuth();
-      await ensureKdfRow();
-
-      alert('ورود موفق.');
-    }catch(e){
-      alert('خطا: ' + (e.message || e));
-    }
-  };
-
-  btnLogout.onclick = async()=>{
-    await supabase.auth.signOut();
-    user = null;
-    cryptoKey = null;
-    formCard.style.display = 'none';
-    setPill(unlockPill,'قفل','warn');
-    await refreshAuth();
-  };
-
-  // ====== 9) Unlock/Lock ======
-  btnUnlock.onclick = async()=>{
-    try{
-      await refreshAuth();
-      if(!user){
-        if(!navigator.onLine){
-          return alert('برای اولین بار باید آنلاین وارد شوید تا user و salt مشخص شود.');
-        }
-        return alert('ابتدا وارد حساب شوید.');
-      }
-      await ensureKdfRow();
-
-      const passcode = passcodeEl.value;
-      if(!passcode) return alert('پس‌کد را وارد کنید.');
-
-      cryptoKey = await deriveKey(passcode, kdfSaltB64, kdfIter);
-
-      setPill(unlockPill,'باز شده','ok');
-      formCard.style.display = '';
-      resetForm();
-      applyAssetRules();
-
-      await pullFromServerAndMerge();   // در صورت آنلاین، دیتای سرور را بکش
-      await loadAndShowFromLocal();
-
-      if(navigator.onLine) await syncNow();
-    }catch(e){
-      cryptoKey = null;
-      setPill(unlockPill,'قفل','warn');
-      alert('باز کردن ناموفق: ' + (e.message || e));
-    }
-  };
-
-  btnLock.onclick = async()=>{
-    cryptoKey = null;
-    formCard.style.display = 'none';
-    setPill(unlockPill,'قفل','warn');
-    listEl.innerHTML = '';
-  };
-
-  // ====== 10) ذخیره محلی + صف سینک ======
-  async function saveLocalUpsert(payload){
-    if(!user) throw new Error('کاربر وارد نشده.');
-    if(!cryptoKey) throw new Error('اپ قفل است.');
-
-    const { iv_b64, ciphertext_b64 } = await encryptRecord(cryptoKey, payload);
-    const now = new Date().toISOString();
-
-    let row;
-    if(editingId){
-      const old = await idbGet('records', editingId);
-      if(!old) throw new Error('رکورد برای ویرایش پیدا نشد.');
-
-      row = {
-        ...old,
-        iv: iv_b64,
-        ciphertext: ciphertext_b64,
-        deleted: false,
-        local_updated_at: now,
-        // server_updated_at دست نمی‌خورد → برای تشخیص تعارض
-        sync_state: 'pending'
-      };
-    } else {
-      const id = uuid();
-      row = {
-        id,
-        user_id: user.id,
-        iv: iv_b64,
-        ciphertext: ciphertext_b64,
-        deleted: false,
-        created_at: now,
-        local_updated_at: now,
-        server_updated_at: null,
-        sync_state: 'pending',
-        conflict_group_id: null,
-        conflict_role: null
-      };
-    }
-
-    await idbPut('records', row);
-    await idbPut('queue', {
-      qid: uuid(),
-      op: 'upsert',
-      id: row.id,
-      ts: now
+  function populateTypes() {
+    const sel = document.getElementById("type");
+    sel.querySelectorAll("option:not([value=\"\"])").forEach(o=>o.remove());
+    types.forEach(t => {
+      const opt = document.createElement("option");
+      opt.value = t.value;
+      opt.textContent = t.label;
+      sel.appendChild(opt);
     });
   }
 
-  async function softDeleteLocal(id){
-    const row = await idbGet('records', id);
-    if(!row) return;
-    const now = new Date().toISOString();
-    const newRow = { ...row, deleted:true, local_updated_at: now, sync_state:'pending' };
-    await idbPut('records', newRow);
-    await idbPut('queue', { qid: uuid(), op:'delete', id, ts: now });
+  function updateFormByType(type) {
+    document.querySelectorAll("[class^='field-']").forEach(el => el.classList.add("hidden"));
+    const f = document.querySelector(`.field-${type}`);
+    if (f) f.classList.remove("hidden");
   }
 
-  btnSave.onclick = async()=>{
-    try{
-      if(!cryptoKey) return alert('اول اپ را باز کنید.');
-      if(!user) return alert('اول وارد شوید.');
-
-      const assetType = assetEl.value;
-      if(!assetType) return alert('نوع دارایی را انتخاب کنید.');
-
-      const rawPrice = priceEl.value.replace(/,/g,'');
-      if(!rawPrice) return alert('قیمت را وارد کنید.');
-
-      const payload = {
-        side: sideEl.value,
-        assetType,
-        coinType: assetType === 'coin' ? coinTypeEl.value : null,
-        weight: weightEl.value ? Number(weightEl.value) : null,
-        karat: karatEl.value ? Number(karatEl.value) : null,
-        price: Number(rawPrice),
-        note: noteEl.value || null
-      };
-
-      await saveLocalUpsert(payload);
-
-      resetForm();
-      await loadAndShowFromLocal();
-
-      if(navigator.onLine) await syncNow();
-    }catch(e){
-      alert('خطا: ' + (e.message || e));
-    }
-  };
-
-  // ====== 11) نمایش از Local (IndexedDB) ======
-  function badgeForState(r){
-    if(r.sync_state === 'pending') return '<span class="badge pending">در انتظار سینک</span>';
-    if(r.sync_state === 'conflict') return '<span class="badge conflict">نیازمند بررسی</span>';
-    return '<span class="badge synced">سینک شده</span>';
+  function formatPriceInput() {
+    const ip = document.getElementById("price");
+    ip.addEventListener("input", e => {
+      let v = e.target.value.replace(/\D/g,"");
+      e.target.value = v.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    });
   }
 
-  function assetSummary(obj){
-    if(!obj) return '';
-    if(obj.assetType === 'coin') return `سکه (${obj.coinType||'-'})`;
-    if(obj.assetType === 'usd') return `دلار`;
-    return `طلا`;
+  function renderTable() {
+    getAllStore("transactions").then(arr => {
+      const tbody = document.querySelector("#tx-table tbody");
+      tbody.innerHTML = "";
+      arr.forEach(tx => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${tx.date}</td>
+          <td>${tx.type}</td>
+          <td>${JSON.stringify(tx.details)}</td>
+          <td>${tx.price}</td>
+          <td>${tx.status}</td>`;
+        tbody.appendChild(tr);
+      });
+    });
   }
 
-  async function loadAndShowFromLocal(){
-    if(!cryptoKey){
-      listEl.innerHTML = '<li>برای نمایش، ابتدا اپ را باز کنید.</li>';
-      return;
-    }
-    const rows = (await idbGetAll('records'))
-      .filter(r=>!r.deleted && r.user_id === user?.id);
-
-    // جدیدترها بالا
-    rows.sort((a,b)=> (b.created_at||'').localeCompare(a.created_at||''));
-
-    listEl.innerHTML = '';
-    for(const r of rows){
-      let obj = null;
-      let err = null;
-      try{
-        obj = await decryptRecord(cryptoKey, r.iv, r.ciphertext);
-      }catch(e){
-        err = e;
-      }
-
-      const li = document.createElement('li');
-      const created = r.created_at ? new Date(r.created_at).toLocaleString() : '-';
-      const price = obj?.price != null ? String(obj.price).replace(/\B(?=(\d{3})+(?!\d))/g, ',') : '-';
-      const w = obj?.weight != null ? obj.weight : '-';
-      const k = obj?.karat != null ? obj.karat : '-';
-
-      li.innerHTML = `
-        <div class="row" style="justify-content:space-between;">
-          <div>
-            ${badgeForState(r)}
-            <span class="muted">${created}</span>
-          </div>
-          <div class="muted mono">${r.id.slice(0,8)}</div>
-        </div>
-        <div style="margin-top:6px;">
-          ${err ? '<span class="badge conflict">خطای رمزگشایی</span>' : ''}
-          <div><b>${obj?.side === 'sell' ? 'فروش' : 'خرید'}</b> | ${assetSummary(obj)}</div>
-          <div class="muted">وزن: ${w} | عیار: ${k} | قیمت: ${price}</div>
-          ${obj?.note ? `<div class="muted">یادداشت: ${obj.note}</div>` : ''}
-          ${r.conflict_group_id ? `<div class="muted">گروه تعارض: <span class="mono">${r.conflict_group_id.slice(0,8)}</span> (${r.conflict_role||'-'})</div>` : ''}
-        </div>
-        <div class="actions">
-          <button class="edit">ویرایش</button>
-          <button class="del danger">حذف</button>
-        </div>
-      `;
-      listEl.appendChild(li);
-
-      li.querySelector('.edit').onclick = async()=>{
-        if(!obj || err) return alert('این رکورد قابل ویرایش نیست (خطای رمزگشایی).');
-        editingId = r.id;
-        editHint.textContent = 'در حال ویرایش: ' + r.id;
-
-        sideEl.value = obj.side || 'buy';
-        assetEl.value = obj.assetType || '';
-        coinTypeEl.value = obj.coinType || 'full';
-        applyAssetRules();
-
-        weightEl.value = obj.weight != null ? String(obj.weight) : '';
-        if(!karatEl.disabled) karatEl.value = obj.karat != null ? String(obj.karat) : karatEl.value;
-
-        priceEl.value = obj.price != null ? String(obj.price).replace(/\B(?=(\d{3})+(?!\d))/g, ',') : '';
-        noteEl.value = obj.note || '';
-        window.scrollTo({top:0, behavior:'smooth'});
-      };
-
-      li.querySelector('.del').onclick = async()=>{
-        if(!confirm('حذف شود؟')) return;
-        await softDeleteLocal(r.id);
-        await loadAndShowFromLocal();
-        if(navigator.onLine) await syncNow();
-      };
-    }
-
-    await updateCounters();
-  }
-
-  // ====== 12) سینک: Push queue + Pull updates + Conflict duplication ======
-  async function safeSelectOneById(id){
-    const { data, error } = await supabase
-      .from('transactions')
-      .select('id,user_id,iv,ciphertext,deleted,created_at,updated_at')
-      .eq('id', id);
-    if(error) throw error;
-    return (data && data[0]) ? data[0] : null;
-  }
-
-  async function pushQueue(){
-    if(!user || !cryptoKey) return;
-    if(!navigator.onLine) return;
-
-    const q = await idbGetAll('queue');
-    q.sort((a,b)=>(a.ts||'').localeCompare(b.ts||''));
-
-    for(const item of q){
-      try{
-        if(item.op === 'upsert'){
-          const local = await idbGet('records', item.id);
-          if(!local){
-            await idbDel('queue', item.qid);
-            continue;
-          }
-          if(local.deleted){
-            // اگر رکورد در این فاصله حذف شده، بگذار delete handler انجام دهد
-            await idbDel('queue', item.qid);
-            continue;
-          }
-
-          // اگر قبلاً روی سرور وجود داشته و server_updated_at داشتیم، تعارض را چک می‌کنیم
-          let serverRow = null;
-          if(local.server_updated_at){
-            serverRow = await safeSelectOneById(local.id);
-          }
-
-          const serverChanged = (serverRow && serverRow.updated_at && serverRow.updated_at !== local.server_updated_at);
-
-          if(serverChanged){
-            // ==== تعارض: هر دو نسخه را نگه می‌داریم ====
-            const group = uuid();
-
-            // 1) نسخه سرور را در local با برچسب conflict ذخیره می‌کنیم (همان id اصلی)
-            await idbPut('records', {
-              ...local,
-              // سرور authoritative
-              iv: serverRow.iv,
-              ciphertext: serverRow.ciphertext,
-              deleted: serverRow.deleted,
-              created_at: serverRow.created_at,
-              local_updated_at: serverRow.updated_at,
-              server_updated_at: serverRow.updated_at,
-              sync_state: 'conflict',
-              conflict_group_id: group,
-              conflict_role: 'server'
-            });
-
-            // 2) نسخه لوکال را به عنوان رکورد جدید با id جدید می‌سازیم و روی سرور insert می‌کنیم
-            const cloneId = uuid();
-            const cloneLocal = {
-              ...local,
-              id: cloneId,
-              created_at: local.created_at,       // همان زمان ساخت قبلی (دلخواه)
-              local_updated_at: local.local_updated_at,
-              server_updated_at: null,
-              sync_state: 'pending',
-              conflict_group_id: group,
-              conflict_role: 'local'
-            };
-            await idbPut('records', cloneLocal);
-
-            const { data: ins, error: insErr } = await supabase
-              .from('transactions')
-              .insert([{
-                id: cloneId,
-                user_id: user.id,
-                iv: cloneLocal.iv,
-                ciphertext: cloneLocal.ciphertext,
-                deleted: false,
-                created_at: cloneLocal.created_at,
-                updated_at: cloneLocal.local_updated_at
-              }])
-              .select('id,updated_at')
-              .single();
-
-            if(insErr) throw insErr;
-
-            const cloneAfter = await idbGet('records', cloneId);
-            await idbPut('records', {
-              ...cloneAfter,
-              server_updated_at: ins.updated_at,
-              local_updated_at: cloneAfter.local_updated_at || ins.updated_at,
-              sync_state: 'conflict' // سینک شده ولی نیازمند بررسی
-            });
-
-            // این عملیات upsert برای id اصلی دیگر انجام نمی‌شود (چون تعارض شد)
-            await idbDel('queue', item.qid);
-            continue;
-          }
-
-          // ==== بدون تعارض: upsert عادی ====
-          const { data: up, error: upErr } = await supabase
-            .from('transactions')
-            .upsert([{
-              id: local.id,
-              user_id: user.id,
-              iv: local.iv,
-              ciphertext: local.ciphertext,
-              deleted: false,
-              created_at: local.created_at,
-              updated_at: local.local_updated_at
-            }], { onConflict:'id' })
-            .select('id,updated_at')
-            .single();
-
-          if(upErr) throw upErr;
-
-          await idbPut('records', {
-            ...local,
-            server_updated_at: up.updated_at,
-            sync_state: 'synced'
-          });
-
-          await idbDel('queue', item.qid);
-          continue;
-        }
-
-        if(item.op === 'delete'){
-          const local = await idbGet('records', item.id);
-          if(!local){
-            await idbDel('queue', item.qid);
-            continue;
-          }
-
-          // حذف نرم روی سرور (حتی اگر تعارض باشد، اینجا ساده نگه می‌داریم)
-          const { error } = await supabase
-            .from('transactions')
-            .update({ deleted:true })
-            .eq('id', local.id);
-
-          if(error) throw error;
-
-          await idbPut('records', {
-            ...local,
-            server_updated_at: new Date().toISOString(),
-            sync_state: 'synced'
-          });
-
-          await idbDel('queue', item.qid);
-          continue;
-        }
-
-      } catch(e){
-        console.error('pushQueue error', e);
-        // در iOS بهتر است همین‌جا قطع کنیم تا فشار نیاورد؛ بعداً دوباره تلاش می‌شود.
-        break;
-      }
-    }
-  }
-
-  async function pullFromServerAndMerge(){
-    if(!user) return;
-    if(!navigator.onLine) return;
-
-    const last = await idbGet('meta','lastPull');
-    const lastPull = last?.v || '1970-01-01T00:00:00.000Z';
-
-    const { data, error } = await supabase
-      .from('transactions')
-      .select('id,user_id,iv,ciphertext,deleted,created_at,updated_at')
-      .eq('user_id', user.id)
-      .gt('updated_at', lastPull)
-      .order('updated_at', { ascending:true });
-
-    if(error) throw error;
-
-    for(const r of (data||[])){
-      const local = await idbGet('records', r.id);
-
-      // اگر لوکال pending است، دست نزن (تغییرات محلی دارد)
-      if(local && local.sync_state === 'pending') continue;
-
-      // اگر قبلاً conflict metadata داشتیم، آن‌ها را حفظ کنیم
-      const merged = {
-        ...(local || {}),
-        ...r,
-        local_updated_at: r.updated_at,
-        server_updated_at: r.updated_at,
-        sync_state: (local?.sync_state === 'conflict') ? 'conflict' : 'synced',
-        conflict_group_id: local?.conflict_group_id || null,
-        conflict_role: local?.conflict_role || null
-      };
-
-      await idbPut('records', merged);
-    }
-
-    await idbPut('meta', { k:'lastPull', v: new Date().toISOString() });
-  }
-
-  async function syncNow(){
-    try{
-      updateNetPill();
-      if(!navigator.onLine){
-        setPill(syncPill,'آفلاین (سینک ممکن نیست)','warn');
-        return;
-      }
-      if(!user){
-        setPill(syncPill,'بدون ورود','warn');
-        return;
-      }
-      if(!cryptoKey){
-        setPill(syncPill,'قفل است','warn');
-        return;
-      }
-
-      setPill(syncPill,'در حال سینک…','warn');
-      await pushQueue();
-      await pullFromServerAndMerge();
-      await loadAndShowFromLocal();
-      setPill(syncPill,'سینک OK','ok');
-    }catch(e){
-      console.error(e);
-      setPill(syncPill,'خطا در سینک','bad');
-    }
-  }
-
-  btnSync.onclick = async()=>{ await syncNow(); };
-
-  // ====== 13) تعارض‌ها: شمارنده + UI Review ======
-  async function updateCounters(){
-    const rows = await idbGetAll('records');
-    const mine = rows.filter(r=>r.user_id === user?.id && !r.deleted);
-
-    const conflicts = mine.filter(r=>r.sync_state === 'conflict' && r.conflict_group_id);
-    const groups = new Set(conflicts.map(r=>r.conflict_group_id));
-    confCount.textContent = String(groups.size);
-
-    // pending count هم می‌توانید اضافه کنید اگر خواستید
-  }
-
-  function groupBy(arr, keyFn){
-    const m = new Map();
-    for(const x of arr){
-      const k = keyFn(x);
-      if(!m.has(k)) m.set(k, []);
-      m.get(k).push(x);
-    }
-    return m;
-  }
-
-  async function showConflicts(){
-    if(!cryptoKey) return alert('ابتدا اپ را باز کنید.');
-    const rows = (await idbGetAll('records'))
-      .filter(r=>r.user_id === user?.id && !r.deleted && r.sync_state === 'conflict' && r.conflict_group_id);
-
-    const groups = groupBy(rows, r=>r.conflict_group_id);
-    conflictList.innerHTML = '';
-
-    if(groups.size === 0){
-      conflictList.innerHTML = '<div class="muted">تعارضی وجود ندارد.</div>';
-      conflictCard.style.display = '';
-      return;
-    }
-
-    for(const [gid, items] of groups.entries()){
-      // مرتب: server اول، local بعد
-      items.sort((a,b)=> (a.conflict_role === 'server' ? -1 : 1));
-
-      const wrap = document.createElement('div');
-      wrap.className = 'card';
-      wrap.innerHTML = `
-        <div class="row" style="justify-content:space-between;">
-          <div><b>گروه تعارض</b> <span class="mono">${gid.slice(0,8)}</span></div>
-          <button class="keepBoth ghost">Resolve: هر دو بمانند</button>
-        </div>
-        <div class="sep"></div>
-        <div class="items"></div>
-      `;
-      const itemsDiv = wrap.querySelector('.items');
-
-      for(const r of items){
-        let obj=null, err=null;
-        try{ obj = await decryptRecord(cryptoKey, r.iv, r.ciphertext); }
-        catch(e){ err=e; }
-
-        const d = document.createElement('div');
-        d.style.border = '1px solid #1f2937';
-        d.style.borderRadius = '12px';
-        d.style.padding = '10px';
-        d.style.margin = '8px 0';
-        d.innerHTML = `
-          <div class="row" style="justify-content:space-between;">
-            <div>
-              <span class="badge conflict">${r.conflict_role || 'variant'}</span>
-              <span class="muted">id: <span class="mono">${r.id.slice(0,8)}</span></span>
-            </div>
-            <button class="delOne danger">حذف این مورد</button>
-          </div>
-          <div style="margin-top:8px;">
-            ${err ? '<div class="badge conflict">خطای رمزگشایی</div>' : `
-              <div><b>${obj.side === 'sell' ? 'فروش' : 'خرید'}</b> | ${assetSummary(obj)}</div>
-              <div class="muted">وزن: ${obj.weight ?? '-'} | عیار: ${obj.karat ?? '-'} | قیمت: ${
-                obj.price!=null ? String(obj.price).replace(/\B(?=(\d{3})+(?!\d))/g, ',') : '-'
-              }</div>
-              ${obj.note ? `<div class="muted">یادداشت: ${obj.note}</div>` : ''}
-            `}
-          </div>
-        `;
-        itemsDiv.appendChild(d);
-
-        d.querySelector('.delOne').onclick = async()=>{
-          if(!confirm('این مورد حذف شود؟')) return;
-          await softDeleteLocal(r.id);
-          // بعد از حذف یکی، می‌توانیم گروه را هم Resolve کنیم یا نه.
-          // اینجا ساده: Resolve را به کاربر می‌سپاریم.
-          if(navigator.onLine) await syncNow();
-          await loadAndShowFromLocal();
-          await showConflicts();
-        };
-      }
-
-      wrap.querySelector('.keepBoth').onclick = async()=>{
-        // Resolve یعنی دیگر "نیازمند بررسی" نباشند
-        for(const r of items){
-          const latest = await idbGet('records', r.id);
-          await idbPut('records', {
-            ...latest,
-            sync_state: 'synced',
-            conflict_group_id: null,
-            conflict_role: null
-          });
-        }
-        await loadAndShowFromLocal();
-        await showConflicts();
-      };
-
-      conflictList.appendChild(wrap);
-    }
-
-    conflictCard.style.display = '';
-  }
-
-  btnConflicts.onclick = ()=>showConflicts();
-  btnCloseConflicts.onclick = ()=>{ conflictCard.style.display='none'; };
-
-  // ====== 14) Export CSV از دیتای محلی (آفلاین هم کار می‌کند) ======
-  function toCSVRow(cols){
-    return cols.map(v=>{
-      const s = (v===null || v===undefined) ? '' : String(v);
-      const escaped = s.replace(/"/g,'""');
-      return `"${escaped}"`;
-    }).join(',');
-  }
-
-  btnExport.onclick = async()=>{
-    try{
-      if(!cryptoKey) return alert('ابتدا اپ را باز کنید.');
-      const rows = (await idbGetAll('records'))
-        .filter(r=>r.user_id === user?.id && !r.deleted);
-
-      const header = [
-        'id','created_at','local_updated_at','server_updated_at',
-        'sync_state','conflict_group_id','conflict_role',
-        'side','assetType','coinType','weight','karat','price','note'
-      ];
-
-      const lines = [toCSVRow(header)];
-
-      for(const r of rows){
-        let obj = {};
-        try{ obj = await decryptRecord(cryptoKey, r.iv, r.ciphertext); }
-        catch{ obj = {}; }
-
-        lines.push(toCSVRow([
-          r.id, r.created_at, r.local_updated_at, r.server_updated_at,
-          r.sync_state, r.conflict_group_id, r.conflict_role,
-          obj.side, obj.assetType, obj.coinType, obj.weight, obj.karat, obj.price, obj.note
-        ]));
-      }
-
-      const blob = new Blob([lines.join('\n')], {type:'text/csv;charset=utf-8'});
+  //====== Export به CSV ======
+  function exportCSV() {
+    getAllStore("transactions").then(arr => {
+      let csv = "date,type,details,price,status\n";
+      arr.forEach(r => {
+        csv += `"${r.date}","${r.type}","${JSON.stringify(r.details)}","${r.price}","${r.status}"\n`;
+      });
+      const blob = new Blob([csv],{ type:"text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'transactions.csv';
-      document.body.appendChild(a);
+      const a = document.createElement("a");
+      a.href = url; a.download = "ledger.csv";
       a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    }catch(e){
-      alert('خطا: ' + (e.message || e));
-    }
-  };
-
-  // ====== 15) راه‌اندازی اولیه ======
-  updateNetPill();
-  setPill(syncPill,'آماده','pill');
-  setPill(unlockPill,'قفل','warn');
-
-  await refreshAuth();
-  if(user){
-    try{ await ensureKdfRow(); } catch {}
+    });
   }
 
-  // اگر قفل نیست (معمولاً نیست)، نمایش نمی‌دهیم.
-  // پس load از local بعد از Unlock انجام می‌شود.
-</script>
+  //====== رویدادها ======
+  document.addEventListener("DOMContentLoaded", () => {
+    populateTypes();
+    formatPriceInput();
+    renderTable();
 
-<script>
-  // ثبت Service Worker
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js').catch(()=>{});
+    // تغییر نوع تراکنش
+    document.getElementById("type")
+      .addEventListener("change", e => updateFormByType(e.target.value));
+
+    // ثبت تراکنش جدید
+    document.getElementById("tx-form").addEventListener("submit", async e => {
+      e.preventDefault();
+      const date  = document.getElementById("date").value;
+      const type  = document.getElementById("type").value;
+      // جمع‌آوری جزئیات بر اساس نوع
+      let details = {};
+      if (type==="showcase") details.desc = document.getElementById("showcase-desc").value;
+      if (type==="molten")   details.karat = document.getElementById("molten-karat").value;
+      if (type==="bankCoin") details.weight = document.getElementById("coin-bank-weight").value;
+      if (type==="normalCoin")details.count = document.getElementById("coin-normal-count").value;
+      if (type==="dollar")   details.amount = document.getElementById("dollar-amount").value;
+      const price = document.getElementById("price").value.replace(/,/g,"");
+
+      // رمزنگاری رکورد به‌دلخواه (اگر کلید محلی دارید)
+      // ---
+      // ذخیره محلی
+      const localTx = { date, type, details, price, status:"pending" };
+      const id = await addLocal(localTx);
+
+      // قرار دادن در صف برای همگام‌سازی
+      await addToQueue({ localId:id, payload: localTx });
+
+      renderTable();
+      e.target.reset();
+    });
+
+    // دکمه سینک
+    document.getElementById("btn-sync").addEventListener("click", () => {
+      syncAll();
+    });
+
+    // خروجی CSV
+    document.getElementById("btn-export").addEventListener("click", () => {
+      exportCSV();
+    });
+
+    // بررسی تعارض‌ها
+    document.getElementById("btn-conflicts").addEventListener("click", async () => {
+      const confs = await getAllStore("conflicts");
+      if (!confs.length) return alert("تعریضی وجود ندارد");
+      console.table(confs);
+      alert("لطفاً در کنسول مرورگر تعارض‌ها را ببینید (برای نمونه)");
+    });
+  });
+
+  //====== ثبت Service Worker ======
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("./sw.js")
+      .then(()=>console.log("SW registered"))
+      .catch(console.error);
   }
-</script>
+  </script>
 </body>
 </html>
