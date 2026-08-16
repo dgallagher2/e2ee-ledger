@@ -1,48 +1,57 @@
-const CACHE_NAME = "e2ee-pwa-v2";
+const CACHE_NAME = 'e2ee-pwa-v1';
 const ASSETS = [
-  "./",
-  "./index.html",
-  "./manifest.json",
-  "./sw.js",
+  './',
+  'index.html',
+  'manifest.json',
+  'sw.js',
+  // اگر آیکون دارید اضافه کنید:
+  //'icon-192.png',
+  //'icon-512.png'
 ];
 
-self.addEventListener("install", (e) => {
-  e.waitUntil((async () => {
-    const cache = await caches.open(CACHE_NAME);
-    await cache.addAll(ASSETS);
-    self.skipWaiting();
-  })());
+self.addEventListener('install', evt => {
+  evt.waitUntil(
+    caches.open(CACHE_NAME)
+      .then(cache => cache.addAll(ASSETS))
+      .then(() => self.skipWaiting())
+  );
 });
 
-self.addEventListener("activate", (e) => {
-  e.waitUntil((async () => {
-    const keys = await caches.keys();
-    await Promise.all(keys.map(k => (k !== CACHE_NAME ? caches.delete(k) : null)));
-    self.clients.claim();
-  })());
+self.addEventListener('activate', evt => {
+  evt.waitUntil(
+    caches.keys().then(keys =>
+      Promise.all(
+        keys
+          .filter(key => key !== CACHE_NAME)
+          .map(key => caches.delete(key))
+      )
+    ).then(() => self.clients.claim())
+  );
 });
 
-self.addEventListener("fetch", (e) => {
-  const req = e.request;
-
-  // navigation fallback for SPA/PWA
-  if (req.mode === "navigate") {
-    e.respondWith((async () => {
-      const cache = await caches.open(CACHE_NAME);
-      const cached = await cache.match("./index.html");
-      try {
-        const net = await fetch(req);
-        return net;
-      } catch {
-        return cached || new Response("Offline", { status: 200 });
-      }
-    })());
-    return;
-  }
-
-  e.respondWith((async () => {
-    const cached = await caches.match(req);
-    if (cached) return cached;
-    return fetch(req);
-  })());
+self.addEventListener('fetch', evt => {
+  // Cache-first برای فایل‌های static
+  evt.respondWith(
+    caches.match(evt.request).then(cached => {
+      if (cached) return cached;
+      return fetch(evt.request)
+        .then(res => {
+          // فقط GET و از همان اوریجین
+          if (
+            evt.request.method === 'GET' &&
+            evt.request.url.startsWith(self.location.origin)
+          ) {
+            const copy = res.clone();
+            caches.open(CACHE_NAME).then(c => c.put(evt.request, copy));
+          }
+          return res;
+        })
+        .catch(_=> {
+          // آفلاین و فایل کش نشده: اگر HTML درخواست شده برگردان index.html
+          if (evt.request.mode === 'navigate') {
+            return caches.match('index.html');
+          }
+        });
+    })
+  );
 });
