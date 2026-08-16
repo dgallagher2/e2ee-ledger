@@ -1,808 +1,173 @@
-<!doctype html>
-<html lang="fa" dir="rtl">
+<!DOCTYPE html>
+<html lang="fa">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#111827" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Ledger PWA</title>
   <link rel="manifest" href="./manifest.json" />
-  <title>E2EE Ledger</title>
-
-  <style>
-    :root { --bg:#0b1220; --card:#111a2e; --muted:#9aa4b2; --text:#e5e7eb; --accent:#60a5fa; --danger:#f87171; --ok:#34d399; }
-    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; background:var(--bg); color:var(--text); }
-    header { padding:16px; display:flex; gap:12px; align-items:center; justify-content:space-between; border-bottom:1px solid rgba(255,255,255,.08); }
-    .wrap { max-width:980px; margin:0 auto; padding:16px; }
-    .grid { display:grid; grid-template-columns: 1fr; gap:12px; }
-    @media (min-width: 960px){ .grid { grid-template-columns: 420px 1fr; } }
-    .card { background:var(--card); border:1px solid rgba(255,255,255,.08); border-radius:14px; padding:14px; }
-    label { display:block; font-size:12px; color:var(--muted); margin:10px 0 6px; }
-    input, select, button, textarea {
-      width:100%; box-sizing:border-box; border-radius:10px;
-      border:1px solid rgba(255,255,255,.12);
-      background:rgba(0,0,0,.25); color:var(--text);
-      padding:10px 12px; outline:none;
-    }
-    textarea { min-height: 70px; resize: vertical; }
-    button { cursor:pointer; background: rgba(96,165,250,.18); border-color: rgba(96,165,250,.35); }
-    button.secondary { background: rgba(255,255,255,.06); border-color: rgba(255,255,255,.10); }
-    button.danger { background: rgba(248,113,113,.14); border-color: rgba(248,113,113,.28); }
-    .row { display:flex; gap:10px; }
-    .row > * { flex:1; }
-    .muted { color:var(--muted); font-size:12px; }
-    .pill { display:inline-block; padding:4px 10px; border-radius:999px; border:1px solid rgba(255,255,255,.14); font-size:12px; color:var(--muted); }
-    .status-ok { color: var(--ok); }
-    .status-bad { color: var(--danger); }
-    .list { display:flex; flex-direction:column; gap:10px; }
-    .tx { padding:10px; border:1px solid rgba(255,255,255,.10); border-radius:12px; background: rgba(0,0,0,.15); }
-    .tx h4 { margin:0 0 6px; font-size:14px; }
-    .tx .meta { display:flex; gap:8px; flex-wrap:wrap; font-size:12px; color:var(--muted); }
-    .hidden { display:none !important; }
-    details pre { white-space: pre-wrap; word-break: break-word; }
-  </style>
-
-  <!-- Supabase UMD: اگر آفلاین/مسدود باشد لود نمی‌شود، ولی اپ باید بالا بیاید -->
+  <!-- Supabase JS SDK -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.0/dist/umd/supabase.min.js"></script>
+  <style>
+    body { font-family: sans-serif; padding: 1rem; direction: rtl; }
+    input, button { margin: .5rem 0; display: block; }
+    #debug { background: #f0f0f0; padding: .5rem; height: 10rem; overflow: auto; white-space: pre-wrap; }
+  </style>
 </head>
-
 <body>
-<header>
-  <div>
-    <div style="font-weight:700">E2EE Ledger</div>
-    <div class="muted">آفلاین-اول، صف سینک، E2EE</div>
+
+  <div id="app">
+    <h1>ورود / ثبت‌نام</h1>
+    <input type="email"    id="email"    placeholder="ایمیل" />
+    <input type="password" id="password" placeholder="رمز عبور" />
+    <button id="btnLogin">ورود</button>
+    <button id="btnSignup">ثبت‌نام</button>
+    <pre id="debug"></pre>
   </div>
-  <div class="pill" id="netPill">…</div>
-</header>
 
-<div class="wrap">
-  <div class="grid">
-
-    <!-- LEFT: AUTH / UNLOCK / SYNC -->
-    <div class="card">
-      <h3 style="margin:0 0 8px">ورود / سینک</h3>
-
-      <div class="muted">
-        اگر آفلاین هستید، می‌توانید فقط Unlock کنید و تراکنش‌ها را محلی ثبت کنید.
-        برای سینک آنلاین باید یکبار آنلاین باشید و Supabase SDK هم لود شود.
-      </div>
-
-      <label>ایمیل</label>
-      <input id="email" type="email" autocomplete="username" placeholder="you@example.com" />
-
-      <label>رمز</label>
-      <input id="password" type="password" autocomplete="current-password" placeholder="••••••••" />
-
-      <div class="row" style="margin-top:10px">
-        <button id="btnLogin">ورود</button>
-        <button id="btnSignup" class="secondary">ثبت‌نام</button>
-      </div>
-
-      <div style="margin-top:10px" class="row">
-        <button id="btnLogout" class="secondary">خروج</button>
-        <button id="btnSync" class="secondary">سینک دستی</button>
-      </div>
-
-      <div style="margin-top:10px" class="muted">
-        وضعیت کاربر: <span id="authState">—</span>
-      </div>
-
-      <hr style="border:0;border-top:1px solid rgba(255,255,255,.10); margin:14px 0" />
-
-      <h3 style="margin:0 0 8px">Unlock (کلید رمزنگاری)</h3>
-      <div class="muted">برای رمزگشایی داده‌های محلی و E2EE لازم است.</div>
-
-      <label>Passcode</label>
-      <input id="passcode" type="password" autocomplete="off" placeholder="پس‌کد شما" />
-
-      <div class="row" style="margin-top:10px">
-        <button id="btnUnlock">Unlock</button>
-        <button id="btnLock" class="secondary">Lock</button>
-      </div>
-
-      <div style="margin-top:10px" class="muted">
-        Vault: <span id="vaultState">—</span>
-      </div>
-
-      <details style="margin-top:12px">
-        <summary>Debug</summary>
-        <pre id="debug" style="background:#0a0f1c;border:1px solid rgba(255,255,255,.1);padding:10px;border-radius:10px;max-height:260px;overflow:auto"></pre>
-      </details>
-    </div>
-
-    <!-- RIGHT: APP -->
-    <div class="card">
-      <h3 style="margin:0 0 8px">ثبت تراکنش</h3>
-
-      <div id="lockedHint" class="muted">
-        ابتدا Unlock کنید تا بتوانید تراکنش‌ها را ببینید/ثبت کنید.
-      </div>
-
-      <form id="txForm" class="hidden">
-        <label>دارایی</label>
-        <select id="assetType">
-          <option value="vitrin">ویترین</option>
-          <option value="abshode">آب‌شده</option>
-          <option value="sekebanki">سکه بانکی</option>
-          <option value="sekeadi">سکه عادی</option>
-          <option value="dollar">دلار</option>
-        </select>
-
-        <div id="coinBankiBox" class="hidden">
-          <label>نوع سکه بانکی</label>
-          <select id="coinBankiType">
-            <option value="tamam">تمام</option>
-            <option value="nim">نیم</option>
-            <option value="rob">ربع</option>
-          </select>
-          <div class="muted">
-            وزن‌های پیش‌فرض: تمام $8.133$، نیم $4.0665$، ربع $2.03325$ (اگر مقدار نهایی دیگری مدنظرتان است بگویید تا ثابت‌ها را تغییر بدهم).
-            عیار سکه بانکی روی $900$ قفل است.
-          </div>
-        </div>
-
-        <div class="row">
-          <div>
-            <label id="amountLabel">مقدار (وزن/تعداد)</label>
-            <input id="amount" inputmode="decimal" placeholder="مثلاً 1 یا 12.34" />
-          </div>
-          <div id="karatBox">
-            <label>عیار</label>
-            <input id="karat" inputmode="numeric" placeholder="مثلاً 750" />
-            <div class="muted">
-              سریع: <a href="#" id="karat750">750</a> |
-              <a href="#" id="karat740">740</a> |
-              <a href="#" id="karat900">900</a>
-            </div>
-          </div>
-        </div>
-
-        <label>قیمت (تومان)</label>
-        <input id="price" inputmode="numeric" placeholder="مثلاً 12,345,000" />
-
-        <label>توضیح</label>
-        <textarea id="note" placeholder="یادداشت..."></textarea>
-
-        <div class="row" style="margin-top:10px">
-          <button id="btnAdd" type="submit">ثبت</button>
-          <button id="btnExport" type="button" class="secondary">Export CSV</button>
-        </div>
-      </form>
-
-      <hr style="border:0;border-top:1px solid rgba(255,255,255,.10); margin:14px 0" />
-
-      <h3 style="margin:0 0 8px">لیست تراکنش‌ها</h3>
-      <div class="muted">وضعیت: pending/synced/conflict</div>
-      <div id="txList" class="list" style="margin-top:10px"></div>
-    </div>
-
-  </div>
-</div>
-
-<script>
-/* ---------------- Debug helpers ---------------- */
-const debugEl = document.getElementById('debug');
-function log(...args){
-  const msg = args.map(a => (typeof a === 'string' ? a : JSON.stringify(a, null, 2))).join(' ');
-  if (debugEl) debugEl.textContent += msg + "\n";
-  console.log(...args);
-}
-window.addEventListener('error', (e) => log("JS error:", e.message));
-window.addEventListener('unhandledrejection', (e) => log("Promise error:", e.reason?.message || String(e.reason)));
-
-log("Boot…");
-
-/* ---------------- Network pill ---------------- */
-const netPill = document.getElementById('netPill');
-function updateNet(){
-  const online = navigator.onLine;
-  netPill.textContent = online ? "Online" : "Offline";
-  netPill.className = "pill " + (online ? "status-ok" : "status-bad");
-}
-window.addEventListener('online', updateNet);
-window.addEventListener('offline', updateNet);
-updateNet();
-
-/* ---------------- Config: Supabase ---------------- */
-const SUPABASE_URL  = "https://aoujnczurxoqnvyqfxsa.supabase.co";
-const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFvdWpuY3p1cnhvcW52eXFmeHNhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY3MDg2NjAsImV4cCI6MjEwMjI4NDY2MH0.feRmvkPByEFRKI-QQzNP4waGqmpXt1_xf7RKa9aI9Po";
-
-/* Lazy init: اگر SDK لود نشده باشد، سینک/ورود غیرفعال می‌شود ولی اپ کرش نمی‌کند */
-function getSupabaseClient(){
-  const sdk = window.supabase;
-  if (!sdk || !sdk.createClient) throw new Error("Supabase SDK لود نشده (احتمالاً آفلاین یا CDN مسدود است).");
-  return sdk.createClient(SUPABASE_URL, SUPABASE_ANON);
-}
-
-/* ---------------- IndexedDB (Promise-correct wrapper) ---------------- */
-const DB_NAME = "ledger-db";
-const DB_VER  = 2;
-
-function reqToPromise(req){
-  return new Promise((resolve, reject) => {
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error || new Error("IDB request failed"));
-  });
-}
-function txDone(tx){
-  return new Promise((resolve, reject) => {
-    tx.oncomplete = () => resolve(true);
-    tx.onerror = () => reject(tx.error || new Error("IDB tx failed"));
-    tx.onabort = () => reject(tx.error || new Error("IDB tx aborted"));
-  });
-}
-
-async function openDB(){
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VER);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      // v1 ممکن است stores دیگری داشته باشد؛ امن upgrade می‌کنیم
-      if (!db.objectStoreNames.contains("records")) db.createObjectStore("records", { keyPath: "id" });
-      if (!db.objectStoreNames.contains("queue")) db.createObjectStore("queue", { keyPath: "qid", autoIncrement: true });
-      if (!db.objectStoreNames.contains("meta")) db.createObjectStore("meta", { keyPath: "key" });
-      if (!db.objectStoreNames.contains("conflicts")) db.createObjectStore("conflicts", { keyPath: "id" });
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error || new Error("openDB failed"));
-  });
-}
-
-let dbPromise = openDB();
-
-/* meta helpers */
-async function metaGet(key){
-  const db = await dbPromise;
-  const tx = db.transaction("meta", "readonly");
-  const store = tx.objectStore("meta");
-  const val = await reqToPromise(store.get(key));
-  await txDone(tx);
-  return val ? val.value : null;
-}
-async function metaSet(key, value){
-  const db = await dbPromise;
-  const tx = db.transaction("meta", "readwrite");
-  tx.objectStore("meta").put({ key, value });
-  await txDone(tx);
-}
-
-/* records helpers */
-async function recordPut(rec){
-  const db = await dbPromise;
-  const tx = db.transaction("records", "readwrite");
-  tx.objectStore("records").put(rec);
-  await txDone(tx);
-}
-async function recordGet(id){
-  const db = await dbPromise;
-  const tx = db.transaction("records", "readonly");
-  const out = await reqToPromise(tx.objectStore("records").get(id));
-  await txDone(tx);
-  return out || null;
-}
-async function recordGetAll(){
-  const db = await dbPromise;
-  const tx = db.transaction("records", "readonly");
-  const out = await reqToPromise(tx.objectStore("records").getAll());
-  await txDone(tx);
-  return out;
-}
-
-/* queue helpers */
-async function queueAdd(item){
-  const db = await dbPromise;
-  const tx = db.transaction("queue", "readwrite");
-  const key = await reqToPromise(tx.objectStore("queue").add(item));
-  await txDone(tx);
-  return key;
-}
-async function queueAll(){
-  const db = await dbPromise;
-  const tx = db.transaction("queue", "readonly");
-  const out = await reqToPromise(tx.objectStore("queue").getAll());
-  await txDone(tx);
-  return out;
-}
-async function queueClear(){
-  const db = await dbPromise;
-  const tx = db.transaction("queue", "readwrite");
-  tx.objectStore("queue").clear();
-  await txDone(tx);
-}
-
-/* ---------------- Crypto (PBKDF2 + AES-GCM) ---------------- */
-const KDF_ITER = 210000;
-
-function b64FromBytes(bytes){
-  let bin = "";
-  bytes.forEach(b => bin += String.fromCharCode(b));
-  return btoa(bin);
-}
-function bytesFromB64(b64){
-  const bin = atob(b64);
-  const out = new Uint8Array(bin.length);
-  for (let i=0;i<bin.length;i++) out[i] = bin.charCodeAt(i);
-  return out;
-}
-async function deriveKey(passcode, saltBytes){
-  const enc = new TextEncoder();
-  const baseKey = await crypto.subtle.importKey(
-    "raw",
-    enc.encode(passcode),
-    { name:"PBKDF2" },
-    false,
-    ["deriveKey"]
-  );
-  return crypto.subtle.deriveKey(
-    { name:"PBKDF2", salt: saltBytes, iterations: KDF_ITER, hash:"SHA-256" },
-    baseKey,
-    { name:"AES-GCM", length:256 },
-    false,
-    ["encrypt","decrypt"]
-  );
-}
-async function encryptJson(key, obj){
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const enc = new TextEncoder().encode(JSON.stringify(obj));
-  const ct = new Uint8Array(await crypto.subtle.encrypt({ name:"AES-GCM", iv }, key, enc));
-  return { iv_b64: b64FromBytes(iv), ct_b64: b64FromBytes(ct) };
-}
-async function decryptJson(key, iv_b64, ct_b64){
-  const iv = bytesFromB64(iv_b64);
-  const ct = bytesFromB64(ct_b64);
-  const pt = await crypto.subtle.decrypt({ name:"AES-GCM", iv }, key, ct);
-  const json = new TextDecoder().decode(pt);
-  return JSON.parse(json);
-}
-
-/* ---------------- Vault state ---------------- */
-const vaultStateEl = document.getElementById('vaultState');
-const lockedHint = document.getElementById('lockedHint');
-const txForm = document.getElementById('txForm');
-let vaultKey = null;
-
-function setVaultState(txt, ok){
-  vaultStateEl.textContent = txt;
-  vaultStateEl.className = ok ? "status-ok" : "status-bad";
-}
-
-async function ensureVaultInit(){
-  // اگر اولین بار است: salt و vault_check بساز
-  let salt_b64 = await metaGet("salt_b64");
-  let check = await metaGet("vault_check");
-  if (!salt_b64){
-    const salt = crypto.getRandomValues(new Uint8Array(16));
-    salt_b64 = b64FromBytes(salt);
-    await metaSet("salt_b64", salt_b64);
-    log("Created local salt.");
-  }
-  if (!check){
-    // check بعد از اولین Unlock ایجاد می‌شود
-    log("Vault check not set yet.");
-  }
-}
-
-async function unlock(passcode){
-  await ensureVaultInit();
-  const salt_b64 = await metaGet("salt_b64");
-  const salt = bytesFromB64(salt_b64);
-  const key = await deriveKey(passcode, salt);
-
-  // اگر vault_check داریم، اعتبارسنجی کنیم
-  const check = await metaGet("vault_check");
-  if (check){
-    try{
-      const obj = await decryptJson(key, check.iv_b64, check.ct_b64);
-      if (obj?.ok !== true) throw new Error("bad check");
-    }catch{
-      throw new Error("پس‌کد اشتباه است یا داده‌ها خراب شده‌اند.");
-    }
-  } else {
-    // اولین بار: vault_check بساز
-    const enc = await encryptJson(key, { ok:true, created_at: Date.now() });
-    await metaSet("vault_check", enc);
-    log("Created vault_check.");
-  }
-
-  vaultKey = key;
-  setVaultState("Unlocked", true);
-  lockedHint.classList.add("hidden");
-  txForm.classList.remove("hidden");
-  await renderList();
-}
-
-function lock(){
-  vaultKey = null;
-  setVaultState("Locked", false);
-  lockedHint.classList.remove("hidden");
-  txForm.classList.add("hidden");
-  document.getElementById('txList').innerHTML = "";
-}
-
-/* ---------------- UI: asset dynamic fields ---------------- */
-const assetTypeEl = document.getElementById('assetType');
-const coinBankiBox = document.getElementById('coinBankiBox');
-const coinBankiTypeEl = document.getElementById('coinBankiType');
-const karatBox = document.getElementById('karatBox');
-const karatEl = document.getElementById('karat');
-const amountEl = document.getElementById('amount');
-const amountLabel = document.getElementById('amountLabel');
-
-const COIN_BANKI = {
-  tamam: { weight: 8.133, karat: 900 },
-  nim:   { weight: 4.0665, karat: 900 },
-  rob:   { weight: 2.03325, karat: 900 },
-};
-
-function applyAssetUI(){
-  const t = assetTypeEl.value;
-  coinBankiBox.classList.toggle("hidden", t !== "sekebanki");
-
-  const isDollar = (t === "dollar");
-  karatBox.classList.toggle("hidden", isDollar);
-
-  if (t === "sekebanki"){
-    const k = COIN_BANKI[coinBankiTypeEl.value];
-    karatEl.value = String(k.karat);
-    karatEl.disabled = true;
-    amountLabel.textContent = "تعداد";
-    if (!amountEl.value) amountEl.value = "1";
-  } else {
-    karatEl.disabled = false;
-    amountLabel.textContent = (t === "dollar") ? "مقدار" : "وزن/مقدار";
-    if (t === "dollar"){
-      karatEl.value = "";
-    }
-  }
-}
-assetTypeEl.addEventListener('change', applyAssetUI);
-coinBankiTypeEl.addEventListener('change', applyAssetUI);
-
-document.getElementById('karat750').addEventListener('click', (e)=>{ e.preventDefault(); karatEl.value = "750"; });
-document.getElementById('karat740').addEventListener('click', (e)=>{ e.preventDefault(); karatEl.value = "740"; });
-document.getElementById('karat900').addEventListener('click', (e)=>{ e.preventDefault(); karatEl.value = "900"; });
-applyAssetUI();
-
-/* ---------------- Formatting helpers ---------------- */
-function parseNumberLike(str){
-  if (!str) return 0;
-  const s = String(str).replace(/[,\s]/g,"").trim();
-  const n = Number(s);
-  return Number.isFinite(n) ? n : 0;
-}
-function formatInt(n){
-  const x = Math.round(Number(n)||0);
-  return x.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-}
-document.getElementById('price').addEventListener('input', (e)=>{
-  const raw = e.target.value.replace(/[^\d]/g,'');
-  e.target.value = raw ? formatInt(raw) : "";
-});
-
-/* ---------------- Records render ---------------- */
-async function renderList(){
-  if (!vaultKey) return;
-  const listEl = document.getElementById('txList');
-  const rows = (await recordGetAll())
-    .filter(r => !r.deleted)
-    .sort((a,b)=> (b.updated_at_ms||0) - (a.updated_at_ms||0));
-
-  listEl.innerHTML = "";
-
-  for (const r of rows){
-    let obj = null;
-    try{
-      obj = await decryptJson(vaultKey, r.iv_b64, r.ct_b64);
-    }catch(e){
-      obj = { asset_type:"?", note:"(decrypt failed)" };
+  <script>
+    // helper برای نمایش لاگ‌ها
+    function log(...args){
+      const pre = document.getElementById('debug');
+      pre.textContent += args.join(' ') + "\n";
+      console.log(...args);
     }
 
-    const div = document.createElement('div');
-    div.className = "tx";
-    const status = r.status || "pending";
-    div.innerHTML = `
-      <h4>${obj.asset_type || "—"} <span class="pill">${status}</span></h4>
-      <div class="meta">
-        <span>id: ${r.id}</span>
-        <span>updated: ${new Date(r.updated_at_ms||0).toLocaleString("fa-IR")}</span>
-      </div>
-      <div class="muted">${obj.note ? obj.note : ""}</div>
-      <div class="row" style="margin-top:8px">
-        <button class="danger" data-del="${r.id}" type="button">حذف (Soft)</button>
-      </div>
-    `;
-    listEl.appendChild(div);
-  }
+    // Supabase client (lazy init)
+    let _sb = null;
+    function getSupabaseClient(){
+      if (!_sb){
+        _sb = supabase.createClient(
+          'https://aoujnczurxoqnvyqfxsa.supabase.co',
+          'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFvdWpuY3p1cnhvcW52eXFmeHNhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY3MDg2NjAsImV4cCI6MjEwMjI4NDY2MH0.feRmvkPByEFRKI-QQzNP4waGqmpXt1_xf7RKa9aI9Po'
+        );
+      }
+      return _sb;
+    }
 
-  listEl.querySelectorAll('button[data-del]').forEach(btn=>{
-    btn.addEventListener('click', async ()=>{
-      const id = btn.getAttribute('data-del');
-      await softDelete(id);
-      await renderList();
+    // تعداد دفعات PBKDF2
+    const KDF_ITER = 210000;
+
+    // تابع doLogin برای login/signup
+    async function doLogin(mode){
+      const email    = document.getElementById('email').value.trim();
+      const password = document.getElementById('password').value;
+      if (!email || !password) throw new Error("ایمیل/رمز را وارد کنید.");
+
+      const sb = getSupabaseClient();
+      let res;
+      if (mode === "signup"){
+        res = await sb.auth.signUp({ email, password });
+      } else {
+        res = await sb.auth.signInWithPassword({ email, password });
+      }
+      if (res.error) throw new Error(res.error.message);
+      console.log("🔐 Supabase Auth Response:", res);
+      return res.data.user;
+    }
+
+    // ارسال salt و iterations و updated_at به جدول user_kdf
+    async function pushSaltToServerIfPossible(user){
+      if (!user || !user.id) {
+        log("user_kdf not synced (error): invalid user");
+        return;
+      }
+      const salt_b64 = localStorage.getItem('salt_b64');
+      if (!salt_b64){
+        log("user_kdf not synced (ok): no salt stored locally");
+        return;
+      }
+      const payload = {
+        user_id:    user.id,
+        salt_b64,
+        iterations: KDF_ITER,
+        updated_at: new Date().toISOString()
+      };
+      try {
+        const sb = getSupabaseClient();
+        const { data, error } = await sb
+          .from("user_kdf")
+          .upsert(payload, { onConflict: "user_id" });
+        if (error) throw error;
+        log("user_kdf upsert ok.");
+      } catch(err) {
+        const m = (err.message||'').toLowerCase();
+        if (m.includes("iterations")) {
+          log("user_kdf not synced (ok): missing 'iterations' column");
+        } else if (m.includes("updated_at")) {
+          log("user_kdf not synced (ok): missing 'updated_at' column");
+        } else {
+          log("user_kdf upsert error:", err.message);
+        }
+      }
+    }
+
+    // پس از ورود موفق، نمایش UI اپلیکیشن اصلی
+    function onLoggedIn(user){
+      const app = document.getElementById('app');
+      app.innerHTML = `
+        <h2>خوش آمدید، ${user.email}</h2>
+        <button id="btnLogout">خروج</button>
+        <button id="btnSync">Sync</button>
+        <pre id="debug"></pre>
+      `;
+      // ثبت handler خروج
+      document.getElementById('btnLogout').addEventListener('click', async ()=>{
+        await getSupabaseClient().auth.signOut();
+        location.reload();
+      });
+      // ثبت handler Sync (نمونه)
+      document.getElementById('btnSync').addEventListener('click', async ()=>{
+        log("Sync…");
+        // اینجا تابع sync تراکنش‌ها را صدا بزنید
+      });
+    }
+
+    // handler دکمه Login
+    document.getElementById('btnLogin').addEventListener('click', async (e)=>{
+      e.preventDefault();
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      try {
+        log("Login…");
+        const user = await doLogin("login");
+        if (!user || !user.id) throw new Error("کاربر برگشتی نامعتبر است.");
+        log("Logged in, user.id =", user.id);
+        await pushSaltToServerIfPossible(user);
+        log("Login ok.");
+        onLoggedIn(user);
+      } catch(err) {
+        log("Login failed:", err.message);
+      } finally {
+        btn.disabled = false;
+      }
     });
-  });
-}
 
-/* ---------------- Create / delete (local + queue) ---------------- */
-async function addTransaction(obj){
-  if (!vaultKey) throw new Error("Vault locked");
+    // handler دکمه Signup
+    document.getElementById('btnSignup').addEventListener('click', async (e)=>{
+      e.preventDefault();
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      try {
+        log("Signup…");
+        const user = await doLogin("signup");
+        log("Signed up, user.id =", user.id);
+        await pushSaltToServerIfPossible(user);
+        log("Signup ok.");
+        onLoggedIn(user);
+      } catch(err) {
+        log("Signup failed:", err.message);
+      } finally {
+        btn.disabled = false;
+      }
+    });
 
-  const id = crypto.randomUUID();
-  const updated_at_ms = Date.now();
-  const enc = await encryptJson(vaultKey, { ...obj, id, updated_at_ms });
-
-  const rec = {
-    id,
-    iv_b64: enc.iv_b64,
-    ct_b64: enc.ct_b64,
-    updated_at_ms,
-    deleted: false,
-    status: "pending",
-    last_synced_at_ms: 0,
-    conflict_group_id: null
-  };
-
-  await recordPut(rec);
-  await queueAdd({ op:"upsert", id, when: Date.now() });
-
-  return id;
-}
-
-async function softDelete(id){
-  const rec = await recordGet(id);
-  if (!rec) return;
-
-  rec.deleted = true;
-  rec.status = "pending";
-  rec.updated_at_ms = Date.now();
-  await recordPut(rec);
-  await queueAdd({ op:"delete", id, when: Date.now() });
-}
-
-/* ---------------- Auth + Sync ---------------- */
-const authStateEl = document.getElementById('authState');
-function setAuthState(txt){ authStateEl.textContent = txt; }
-
-async function currentUser(){
-  try{
-    const sb = getSupabaseClient();
-    const { data } = await sb.auth.getUser();
-    return data.user || null;
-  }catch(e){
-    log("Auth disabled:", e.message);
-    return null;
-  }
-}
-
-async function doLogin(mode){
-  const email = document.getElementById('email').value.trim();
-  const password = document.getElementById('password').value;
-  if (!email || !password) throw new Error("ایمیل/رمز را وارد کنید.");
-
-  const sb = getSupabaseClient();
-  if (mode === "signup"){
-    const { data, error } = await sb.auth.signUp({ email, password });
-    if (error) throw error;
-    return data.user;
-  } else {
-    const { data, error } = await sb.auth.signInWithPassword({ email, password });
-    if (error) throw error;
-    return data.user;
-  }
-}
-
-async function doLogout(){
-  const sb = getSupabaseClient();
-  const { error } = await sb.auth.signOut();
-  if (error) throw error;
-}
-
-async function pushSaltToServerIfPossible(user){
-  // این بخش نیازمند جدول user_kdf روی Supabase است.
-  // اگر جدول ندارید، این فقط fail می‌شود و اپ کارش را ادامه می‌دهد.
-  try{
-    const sb = getSupabaseClient();
-    const salt_b64 = await metaGet("salt_b64");
-    const payload = { user_id: user.id, salt_b64, iterations: KDF_ITER, updated_at: new Date().toISOString() };
-    const { error } = await sb.from("user_kdf").upsert(payload, { onConflict: "user_id" });
-    if (error) throw error;
-    log("user_kdf upsert ok.");
-  }catch(e){
-    log("user_kdf not synced (ok):", e.message);
-  }
-}
-
-async function syncNow(){
-  const user = await currentUser();
-  if (!user) throw new Error("ابتدا وارد شوید (یا Supabase در دسترس نیست).");
-
-  const sb = getSupabaseClient();
-  const q = await queueAll();
-  if (!q.length){
-    log("Queue empty.");
-    return;
-  }
-
-  log("Sync start. items:", q.length);
-
-  // ساده: همه رکوردهای pending را می‌فرستیم. (مدیریت تعارض کامل را اگر خواستید بعداً دقیق‌تر می‌کنیم)
-  for (const qi of q){
-    const rec = await recordGet(qi.id);
-    if (!rec) continue;
-
-    if (qi.op === "delete"){
-      // Soft delete روی سرور (نیازمند ستون deleted)
-      const { error } = await sb.from("transactions").upsert({
-        id: rec.id,
-        user_id: user.id,
-        iv: rec.iv_b64,
-        ciphertext: rec.ct_b64,
-        deleted: true,
-        updated_at: new Date(rec.updated_at_ms).toISOString(),
-        conflict_group_id: rec.conflict_group_id
-      }, { onConflict: "id" });
-      if (error) throw error;
-
-      rec.status = "synced";
-      rec.last_synced_at_ms = Date.now();
-      await recordPut(rec);
-      continue;
+    // ثبت Service Worker
+    if ('serviceWorker' in navigator){
+      navigator.serviceWorker.register('./sw.js')
+        .then(()=> log("SW registered"))
+        .catch(err=> log("SW registration failed:", err.message));
     }
+  </script>
 
-    if (qi.op === "upsert"){
-      const { error } = await sb.from("transactions").upsert({
-        id: rec.id,
-        user_id: user.id,
-        iv: rec.iv_b64,
-        ciphertext: rec.ct_b64,
-        deleted: !!rec.deleted,
-        updated_at: new Date(rec.updated_at_ms).toISOString(),
-        conflict_group_id: rec.conflict_group_id
-      }, { onConflict: "id" });
-      if (error) throw error;
-
-      rec.status = "synced";
-      rec.last_synced_at_ms = Date.now();
-      await recordPut(rec);
-      continue;
-    }
-  }
-
-  await queueClear();
-  log("Sync done.");
-}
-
-/* ---------------- Event wiring ---------------- */
-document.getElementById('btnUnlock').addEventListener('click', async ()=>{
-  try{
-    const pc = document.getElementById('passcode').value;
-    await unlock(pc);
-  }catch(e){
-    log("Unlock failed:", e.message);
-    setVaultState(e.message, false);
-  }
-});
-document.getElementById('btnLock').addEventListener('click', ()=> lock());
-
-document.getElementById('btnLogin').addEventListener('click', async (e)=>{
-  e.preventDefault();
-  try{
-    log("Login…");
-    const user = await doLogin("login");
-    setAuthState(user ? ("Logged in: " + user.id) : "Logged in");
-    await pushSaltToServerIfPossible(user);
-    log("Login ok.");
-  }catch(err){
-    log("Login failed:", err.message || String(err));
-  }
-});
-document.getElementById('btnSignup').addEventListener('click', async (e)=>{
-  e.preventDefault();
-  try{
-    log("Signup…");
-    const user = await doLogin("signup");
-    setAuthState(user ? ("Signed up: " + user.id) : "Signed up");
-    await pushSaltToServerIfPossible(user);
-    log("Signup ok. اگر Email confirmation روشن باشد باید ایمیل را تأیید کنید.");
-  }catch(err){
-    log("Signup failed:", err.message || String(err));
-  }
-});
-document.getElementById('btnLogout').addEventListener('click', async ()=>{
-  try{
-    await doLogout();
-    setAuthState("Logged out");
-    log("Logout ok.");
-  }catch(err){
-    log("Logout failed:", err.message || String(err));
-  }
-});
-document.getElementById('btnSync').addEventListener('click', async ()=>{
-  try{
-    await syncNow();
-    await renderList();
-  }catch(err){
-    log("Sync failed:", err.message || String(err));
-  }
-});
-
-document.getElementById('txForm').addEventListener('submit', async (e)=>{
-  e.preventDefault();
-  try{
-    const asset_type = assetTypeEl.value;
-
-    const price = parseNumberLike(document.getElementById('price').value);
-    const note  = document.getElementById('note').value.trim();
-
-    let amount = parseNumberLike(amountEl.value);
-    let karat = parseNumberLike(karatEl.value);
-
-    const payload = { asset_type, price, note, created_at_ms: Date.now() };
-
-    if (asset_type === "sekebanki"){
-      const c = COIN_BANKI[coinBankiTypeEl.value];
-      payload.coin_type = coinBankiTypeEl.value;
-      payload.count = Math.max(1, Math.round(amount || 1));
-      payload.weight = c.weight;
-      payload.karat = c.karat;
-    } else if (asset_type === "dollar"){
-      payload.amount = amount;
-    } else {
-      payload.amount = amount;
-      payload.karat = karat || 0;
-    }
-
-    const id = await addTransaction(payload);
-    log("Added tx:", id);
-    document.getElementById('note').value = "";
-    await renderList();
-  }catch(err){
-    log("Add failed:", err.message || String(err));
-  }
-});
-
-document.getElementById('btnExport').addEventListener('click', async ()=>{
-  try{
-    if (!vaultKey) throw new Error("Unlock کنید.");
-    const rows = (await recordGetAll()).filter(r=>!r.deleted);
-    const decoded = [];
-    for (const r of rows){
-      const obj = await decryptJson(vaultKey, r.iv_b64, r.ct_b64);
-      decoded.push(obj);
-    }
-    const cols = ["id","asset_type","price","amount","karat","coin_type","count","weight","note","created_at_ms","updated_at_ms"];
-    const csv = [
-      cols.join(","),
-      ...decoded.map(o => cols.map(c => JSON.stringify(o?.[c] ?? "")).join(","))
-    ].join("\n");
-
-    const blob = new Blob([csv], { type:"text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = "ledger.csv";
-    a.click();
-    URL.revokeObjectURL(url);
-  }catch(err){
-    log("Export failed:", err.message || String(err));
-  }
-});
-
-/* ---------------- Startup ---------------- */
-(async function init(){
-  try{
-    const u = await currentUser();
-    setAuthState(u ? ("Logged in: " + u.id) : "Not logged in");
-  }catch{}
-  setVaultState("Locked", false);
-})();
-</script>
-
-<script>
-/* Service Worker */
-if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("./sw.js")
-    .then(()=>log("SW registered"))
-    .catch((e)=>log("SW register failed:", e.message));
-}
-</script>
 </body>
 </html>
