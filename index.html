@@ -1,79 +1,117 @@
 <!DOCTYPE html>
 <html lang="fa">
 <head>
-  <meta charset="utf-8" />
+  <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Ledger PWA</title>
-  <link rel="manifest" href="./manifest.json" />
-  <!-- Supabase JS SDK -->
+  <title>دفتر مالی آفلاین با E2EE</title>
+  <link rel="manifest" href="manifest.json" />
+
+  <!-- Supabase JS -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.0/dist/umd/supabase.min.js"></script>
+
   <style>
-    body { font-family: sans-serif; padding: 1rem; direction: rtl; }
-    input, button { margin: .5rem 0; display: block; }
-    #debug { background: #f0f0f0; padding: .5rem; height: 10rem; overflow: auto; white-space: pre-wrap; }
+    body { font-family: sans-serif; padding: 1em; }
+    #debug { margin-top:1em; background:#f0f0f0; padding:0.5em; height:150px; overflow:auto; font-size:0.9em; }
+    #app { display:none; }
+    label { display:block; margin:0.5em 0; }
+    input { padding:0.3em; width:100%; max-width:300px; }
+    button { margin-right:0.5em; padding:0.5em 1em; }
   </style>
+
 </head>
 <body>
+  <h1>دفتر مالی با E2EE</h1>
 
-  <div id="app">
-    <h1>ورود / ثبت‌نام</h1>
-    <input type="email"    id="email"    placeholder="ایمیل" />
-    <input type="password" id="password" placeholder="رمز عبور" />
+  <div id="auth-form">
+    <label>ایمیل: <input type="email" id="email" /></label>
+    <label>رمز:   <input type="password" id="password"/></label>
     <button id="btnLogin">ورود</button>
     <button id="btnSignup">ثبت‌نام</button>
-    <pre id="debug"></pre>
   </div>
 
+  <div id="app">
+    <p>کاربر وارد شده: <strong><span id="user-id"></span></strong></p>
+    <!-- TODO: فرم تراکنش، لیست دارایی‌ها، دکمه Sync و Export -->
+  </div>
+
+  <div id="debug"></div>
+
   <script>
-    // helper برای نمایش لاگ‌ها
+    // ==== CONFIGURATION ====
+    const SUPA_REF    = 'https://aoujnczurxoqnvyqfxsa.supabase.co';
+    const SUPA_ANON   = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFvdWpuY3p1cnhvcW52eXFmeHNhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY3MDg2NjAsImV4cCI6MjEwMjI4NDY2MH0.feRmvkPByEFRKI-QQzNP4waGqmpXt1_xf7RKa9aI9Po';
+    const KDF_ITER    = 210000;        // تعداد تکرار PBKDF2
+    const DB_NAME     = 'ledger-db';
+    const DB_VERSION  = 2;
+    const SW_CACHE    = 'e2ee-pwa-v1';
+
+    // ==== SIMPLE DEBUG LOG ====
     function log(...args){
-      const pre = document.getElementById('debug');
-      pre.textContent += args.join(' ') + "\n";
+      const p = document.createElement('div');
+      p.textContent = args.map(a=>(typeof a==='object'? JSON.stringify(a):a)).join(' ');
+      document.getElementById('debug').appendChild(p);
       console.log(...args);
     }
 
-    // Supabase client (lazy init)
+    // ==== Supabase Client ====
     let _sb = null;
     function getSupabaseClient(){
       if (!_sb){
-        _sb = supabase.createClient(
-          'https://aoujnczurxoqnvyqfxsa.supabase.co',
-          'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFvdWpuY3p1cnhvcW52eXFmeHNhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY3MDg2NjAsImV4cCI6MjEwMjI4NDY2MH0.feRmvkPByEFRKI-QQzNP4waGqmpXt1_xf7RKa9aI9Po'
-        );
+        _sb = supabase.createClient(SUPA_REF, SUPA_ANON);
       }
       return _sb;
     }
 
-    // تعداد دفعات PBKDF2
-    const KDF_ITER = 210000;
+    // ==== IndexedDB SETUP ====
+    let dbPromise = null;
+    function getDB(){
+      if (!dbPromise){
+        dbPromise = new Promise((res, rej)=>{
+          const req = indexedDB.open(DB_NAME, DB_VERSION);
+          req.onupgradeneeded = e=>{
+            const db = e.target.result;
+            if (!db.objectStoreNames.contains('records'))
+              db.createObjectStore('records', { keyPath:'id' });
+            if (!db.objectStoreNames.contains('queue'))
+              db.createObjectStore('queue',   { keyPath:'id' });
+            if (!db.objectStoreNames.contains('meta'))
+              db.createObjectStore('meta',    { keyPath:'key' });
+            if (!db.objectStoreNames.contains('conflicts'))
+              db.createObjectStore('conflicts', { keyPath:'id', autoIncrement:true });
+          };
+          req.onsuccess = ()=>res(req.result);
+          req.onerror   = ()=>rej(req.error);
+        });
+      }
+      return dbPromise;
+    }
 
-    // تابع doLogin برای login/signup
+    // ==== AUTHENTICATION ====
     async function doLogin(mode){
       const email    = document.getElementById('email').value.trim();
       const password = document.getElementById('password').value;
-      if (!email || !password) throw new Error("ایمیل/رمز را وارد کنید.");
-
+      if(!email||!password) throw new Error("ایمیل و رمز را وارد کنید.");
       const sb = getSupabaseClient();
       let res;
-      if (mode === "signup"){
+      if(mode==='signup'){
         res = await sb.auth.signUp({ email, password });
       } else {
         res = await sb.auth.signInWithPassword({ email, password });
       }
-      if (res.error) throw new Error(res.error.message);
-      console.log("🔐 Supabase Auth Response:", res);
+      if(res.error) throw new Error(res.error.message);
+      log("🔐 Supabase Auth Response:", res);
       return res.data.user;
     }
 
-    // ارسال salt و iterations و updated_at به جدول user_kdf
+    // ==== PUSH SALT TO user_kdf TABLE ====
     async function pushSaltToServerIfPossible(user){
-      if (!user || !user.id) {
+      if(!user||!user.id){
         log("user_kdf not synced (error): invalid user");
         return;
       }
       const salt_b64 = localStorage.getItem('salt_b64');
-      if (!salt_b64){
-        log("user_kdf not synced (ok): no salt stored locally");
+      if(!salt_b64){
+        log("user_kdf not synced (ok): no salt locally");
         return;
       }
       const payload = {
@@ -87,87 +125,76 @@
         const { data, error } = await sb
           .from("user_kdf")
           .upsert(payload, { onConflict: "user_id" });
-        if (error) throw error;
+        if(error) throw error;
         log("user_kdf upsert ok.");
-      } catch(err) {
-        const m = (err.message||'').toLowerCase();
-        if (m.includes("iterations")) {
+      } catch(err){
+        const m = err.message||'';
+        if(m.includes("Could not find the 'iterations'")){
           log("user_kdf not synced (ok): missing 'iterations' column");
-        } else if (m.includes("updated_at")) {
+        } else if(m.includes("Could not find the 'updated_at'")){
           log("user_kdf not synced (ok): missing 'updated_at' column");
         } else {
-          log("user_kdf upsert error:", err.message);
+          log("user_kdf upsert error:", m);
         }
       }
     }
 
-    // پس از ورود موفق، نمایش UI اپلیکیشن اصلی
     function onLoggedIn(user){
-      const app = document.getElementById('app');
-      app.innerHTML = `
-        <h2>خوش آمدید، ${user.email}</h2>
-        <button id="btnLogout">خروج</button>
-        <button id="btnSync">Sync</button>
-        <pre id="debug"></pre>
-      `;
-      // ثبت handler خروج
-      document.getElementById('btnLogout').addEventListener('click', async ()=>{
-        await getSupabaseClient().auth.signOut();
-        location.reload();
-      });
-      // ثبت handler Sync (نمونه)
-      document.getElementById('btnSync').addEventListener('click', async ()=>{
-        log("Sync…");
-        // اینجا تابع sync تراکنش‌ها را صدا بزنید
-      });
+      document.getElementById('auth-form').style.display = 'none';
+      document.getElementById('app').style.display = 'block';
+      document.getElementById('user-id').textContent = user.id;
     }
 
-    // handler دکمه Login
-    document.getElementById('btnLogin').addEventListener('click', async (e)=>{
-      e.preventDefault();
-      const btn = e.currentTarget;
-      btn.disabled = true;
-      try {
-        log("Login…");
-        const user = await doLogin("login");
-        if (!user || !user.id) throw new Error("کاربر برگشتی نامعتبر است.");
-        log("Logged in, user.id =", user.id);
-        await pushSaltToServerIfPossible(user);
-        log("Login ok.");
-        onLoggedIn(user);
-      } catch(err) {
-        log("Login failed:", err.message);
-      } finally {
-        btn.disabled = false;
-      }
+    // ==== DOMContentLoaded & Event Listeners ====
+    window.addEventListener('DOMContentLoaded', ()=>{
+      const btnLogin  = document.getElementById('btnLogin');
+      const btnSignup = document.getElementById('btnSignup');
+
+      btnLogin.addEventListener('click', async e=>{
+        e.preventDefault();
+        btnLogin.disabled = true;
+        try {
+          log("Login…");
+          const user = await doLogin("login");
+          log("Logged in, user.id =", user.id);
+          await pushSaltToServerIfPossible(user);
+          log("Login ok.");
+          onLoggedIn(user);
+        } catch(err){
+          log("Login failed:", err.message);
+        } finally {
+          btnLogin.disabled = false;
+        }
+      });
+
+      btnSignup.addEventListener('click', async e=>{
+        e.preventDefault();
+        btnSignup.disabled = true;
+        try {
+          log("Signup…");
+          const user = await doLogin("signup");
+          log("Signed up, user.id =", user.id);
+          await pushSaltToServerIfPossible(user);
+          log("Signup ok.");
+          onLoggedIn(user);
+        } catch(err){
+          log("Signup failed:", err.message);
+        } finally {
+          btnSignup.disabled = false;
+        }
+      });
+
+      // initial view
+      document.getElementById('auth-form').style.display = 'block';
+      document.getElementById('app').style.display      = 'none';
     });
 
-    // handler دکمه Signup
-    document.getElementById('btnSignup').addEventListener('click', async (e)=>{
-      e.preventDefault();
-      const btn = e.currentTarget;
-      btn.disabled = true;
-      try {
-        log("Signup…");
-        const user = await doLogin("signup");
-        log("Signed up, user.id =", user.id);
-        await pushSaltToServerIfPossible(user);
-        log("Signup ok.");
-        onLoggedIn(user);
-      } catch(err) {
-        log("Signup failed:", err.message);
-      } finally {
-        btn.disabled = false;
-      }
-    });
-
-    // ثبت Service Worker
-    if ('serviceWorker' in navigator){
-      navigator.serviceWorker.register('./sw.js')
-        .then(()=> log("SW registered"))
-        .catch(err=> log("SW registration failed:", err.message));
+    // ==== REGISTER SERVICE WORKER ====
+    if('serviceWorker' in navigator){
+      navigator.serviceWorker.register('sw.js')
+        .then(_=>log("SW registered"))
+        .catch(err=>log("SW register error:", err.message));
     }
   </script>
-
 </body>
 </html>
