@@ -3,10 +3,9 @@ const ASSETS = [
   './',
   'index.html',
   'manifest.json',
-  'sw.js',
-  // اگر آیکون دارید اضافه کنید:
-  //'icon-192.png',
-  //'icon-512.png'
+  'sw.js'
+  // 'icon-192.png',
+  // 'icon-512.png'
 ];
 
 self.addEventListener('install', evt => {
@@ -30,24 +29,19 @@ self.addEventListener('activate', evt => {
 });
 
 self.addEventListener('fetch', evt => {
-  // Cache-first برای فایل‌های static
   evt.respondWith(
     caches.match(evt.request).then(cached => {
       if (cached) return cached;
       return fetch(evt.request)
         .then(res => {
-          // فقط GET و از همان اوریجین
-          if (
-            evt.request.method === 'GET' &&
-            evt.request.url.startsWith(self.location.origin)
-          ) {
+          if (evt.request.method === 'GET' &&
+              evt.request.url.startsWith(self.location.origin)) {
             const copy = res.clone();
             caches.open(CACHE_NAME).then(c => c.put(evt.request, copy));
           }
           return res;
         })
-        .catch(_=> {
-          // آفلاین و فایل کش نشده: اگر HTML درخواست شده برگردان index.html
+        .catch(_ => {
           if (evt.request.mode === 'navigate') {
             return caches.match('index.html');
           }
