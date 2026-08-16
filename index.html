@@ -17,7 +17,6 @@
     input { padding:0.3em; width:100%; max-width:300px; }
     button { margin-right:0.5em; padding:0.5em 1em; }
   </style>
-
 </head>
 <body>
   <h1>دفتر مالی با E2EE</h1>
@@ -38,14 +37,13 @@
 
   <script>
     // ==== CONFIGURATION ====
-    const SUPA_REF    = 'https://aoujnczurxoqnvyqfxsa.supabase.co';
-    const SUPA_ANON   = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFvdWpuY3p1cnhvcW52eXFmeHNhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY3MDg2NjAsImV4cCI6MjEwMjI4NDY2MH0.feRmvkPByEFRKI-QQzNP4waGqmpXt1_xf7RKa9aI9Po';
-    const KDF_ITER    = 210000;        // تعداد تکرار PBKDF2
+    const SUPA_REF    = 'https://YOUR_PROJECT_REF.supabase.co';
+    const SUPA_ANON   = 'YOUR_ANON_KEY';
+    const KDF_ITER    = 210000;
     const DB_NAME     = 'ledger-db';
     const DB_VERSION  = 2;
-    const SW_CACHE    = 'e2ee-pwa-v1';
 
-    // ==== SIMPLE DEBUG LOG ====
+    // ==== DEBUG LOG ====
     function log(...args){
       const p = document.createElement('div');
       p.textContent = args.map(a=>(typeof a==='object'? JSON.stringify(a):a)).join(' ');
@@ -56,10 +54,35 @@
     // ==== Supabase Client ====
     let _sb = null;
     function getSupabaseClient(){
-      if (!_sb){
+      if (!_sb) {
         _sb = supabase.createClient(SUPA_REF, SUPA_ANON);
       }
       return _sb;
+    }
+
+    // ==== WebCrypto Helpers ====
+    function makeSalt(){
+      const arr = crypto.getRandomValues(new Uint8Array(16));
+      return btoa(String.fromCharCode(...arr));
+    }
+    async function ensureSalt(){
+      let salt = localStorage.getItem('salt_b64');
+      if (!salt) {
+        salt = makeSalt();
+        localStorage.setItem('salt_b64', salt);
+        log("Generated new salt and stored locally");
+      }
+      return salt;
+    }
+    async function deriveKey(password, salt_b64){
+      const enc = new TextEncoder();
+      const passKey = await crypto.subtle.importKey(
+        'raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']
+      );
+      const salt = Uint8Array.from(atob(salt_b64), c=>c.charCodeAt(0));
+      return crypto.subtle.deriveKey({
+        name: 'PBKDF2', salt, iterations: KDF_ITER, hash: 'SHA-256'
+      }, passKey, { name:'AES-GCM', length:256 }, true, ['encrypt','decrypt']);
     }
 
     // ==== IndexedDB SETUP ====
@@ -70,14 +93,14 @@
           const req = indexedDB.open(DB_NAME, DB_VERSION);
           req.onupgradeneeded = e=>{
             const db = e.target.result;
-            if (!db.objectStoreNames.contains('records'))
-              db.createObjectStore('records', { keyPath:'id' });
-            if (!db.objectStoreNames.contains('queue'))
-              db.createObjectStore('queue',   { keyPath:'id' });
+            ['records','queue'].forEach(store=>{
+              if (!db.objectStoreNames.contains(store))
+                db.createObjectStore(store, { keyPath:'id' });
+            });
             if (!db.objectStoreNames.contains('meta'))
               db.createObjectStore('meta',    { keyPath:'key' });
             if (!db.objectStoreNames.contains('conflicts'))
-              db.createObjectStore('conflicts', { keyPath:'id', autoIncrement:true });
+              db.createObjectStore('conflicts',{ keyPath:'id', autoIncrement:true });
           };
           req.onsuccess = ()=>res(req.result);
           req.onerror   = ()=>rej(req.error);
@@ -86,34 +109,30 @@
       return dbPromise;
     }
 
-    // ==== AUTHENTICATION ====
+    // ==== AUTH FUNCTIONS ====
     async function doLogin(mode){
-      const email    = document.getElementById('email').value.trim();
+      const email = document.getElementById('email').value.trim();
       const password = document.getElementById('password').value;
-      if(!email||!password) throw new Error("ایمیل و رمز را وارد کنید.");
+      if (!email || !password) throw new Error("ایمیل و رمز را وارد کنید.");
       const sb = getSupabaseClient();
       let res;
-      if(mode==='signup'){
+      if (mode === 'signup') {
         res = await sb.auth.signUp({ email, password });
       } else {
         res = await sb.auth.signInWithPassword({ email, password });
       }
-      if(res.error) throw new Error(res.error.message);
+      if (res.error) throw new Error(res.error.message);
       log("🔐 Supabase Auth Response:", res);
       return res.data.user;
     }
 
-    // ==== PUSH SALT TO user_kdf TABLE ====
+    // ==== UPSERT user_kdf ====
     async function pushSaltToServerIfPossible(user){
-      if(!user||!user.id){
-        log("user_kdf not synced (error): invalid user");
+      if (!user || !user.id) {
+        log("user_kdf upsert skipped: invalid user");
         return;
       }
-      const salt_b64 = localStorage.getItem('salt_b64');
-      if(!salt_b64){
-        log("user_kdf not synced (ok): no salt locally");
-        return;
-      }
+      const salt_b64 = await ensureSalt();
       const payload = {
         user_id:    user.id,
         salt_b64,
@@ -125,17 +144,10 @@
         const { data, error } = await sb
           .from("user_kdf")
           .upsert(payload, { onConflict: "user_id" });
-        if(error) throw error;
+        if (error) throw error;
         log("user_kdf upsert ok.");
       } catch(err){
-        const m = err.message||'';
-        if(m.includes("Could not find the 'iterations'")){
-          log("user_kdf not synced (ok): missing 'iterations' column");
-        } else if(m.includes("Could not find the 'updated_at'")){
-          log("user_kdf not synced (ok): missing 'updated_at' column");
-        } else {
-          log("user_kdf upsert error:", m);
-        }
+        log("user_kdf upsert error:", err.message || err);
       }
     }
 
@@ -145,7 +157,7 @@
       document.getElementById('user-id').textContent = user.id;
     }
 
-    // ==== DOMContentLoaded & Event Listeners ====
+    // ==== DOM & EVENTS ====
     window.addEventListener('DOMContentLoaded', ()=>{
       const btnLogin  = document.getElementById('btnLogin');
       const btnSignup = document.getElementById('btnSignup');
@@ -158,7 +170,7 @@
           const user = await doLogin("login");
           log("Logged in, user.id =", user.id);
           await pushSaltToServerIfPossible(user);
-          log("Login ok.");
+          log("Login complete.");
           onLoggedIn(user);
         } catch(err){
           log("Login failed:", err.message);
@@ -175,7 +187,7 @@
           const user = await doLogin("signup");
           log("Signed up, user.id =", user.id);
           await pushSaltToServerIfPossible(user);
-          log("Signup ok.");
+          log("Signup complete.");
           onLoggedIn(user);
         } catch(err){
           log("Signup failed:", err.message);
@@ -189,8 +201,8 @@
       document.getElementById('app').style.display      = 'none';
     });
 
-    // ==== REGISTER SERVICE WORKER ====
-    if('serviceWorker' in navigator){
+    // ==== SERVICE WORKER ====
+    if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js')
         .then(_=>log("SW registered"))
         .catch(err=>log("SW register error:", err.message));
