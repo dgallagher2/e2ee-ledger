@@ -1,10 +1,10 @@
 {
+  "name": "اپلیکیشن مالی آفلاین",
   "short_name": "دفتر مالی",
-  "name": "دفتر مالی آفلاین با E2EE",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#ffffff",
-  "theme_color": "#317EFB",
+  "theme_color": "#2196f3",
   "icons": [
     {
       "src": "icon-192.png",
