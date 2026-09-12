@@ -1,4 +1,4 @@
-const CACHE = 'e2ee-pwa-v1';
+const CACHE = 'e2ee-pwa-v2';
 
 const ASSETS = [
   './',
