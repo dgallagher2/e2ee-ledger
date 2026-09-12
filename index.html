@@ -111,9 +111,6 @@
         <label>نوع دارایی</label>
         <select id="assetType">
           <option value="">— انتخاب —</option>
-          <option value="gold">طلا</option>
-          <option value="coin">سکه</option>
-          <option value="usd">دلار</option>
         </select>
       </div>
     </div>
@@ -126,23 +123,28 @@
           <option value="half">نیم</option>
           <option value="quarter">ربع</option>
         </select>
-        <div class="muted">با انتخاب سکه: وزن خودکار و عیار قفل روی ۹۰۰</div>
+        <div class="muted">تمام: 8.133 گرم | نیم: 4.060 گرم | ربع: 2.033 گرم — عیار ثابت 900</div>
       </div>
       <div></div>
     </div>
 
     <div class="grid">
       <div>
-        <label>وزن (گرم)</label>
+        <label id="weightLabel">وزن (گرم)</label>
         <input id="weight" inputmode="decimal" placeholder="مثلاً 12.34"/>
       </div>
       <div>
         <label>عیار</label>
-        <input id="karat" inputmode="numeric" placeholder="مثلاً 750"/>
-        <div class="karatLinks muted">
-          پیشنهاد: <a href="#" data-k="750">750</a>
-          <a href="#" data-k="740">740</a>
+        <input id="karat" inputmode="numeric" min="0" max="1000" placeholder="0 تا 1000"/>
+        <div class="karatLinks muted" id="karatLinks">
+          عیارهای پیشنهادی:
+          <a href="#" data-k="999">999</a>
+          <a href="#" data-k="916">916</a>
           <a href="#" data-k="900">900</a>
+          <a href="#" data-k="875">875</a>
+          <a href="#" data-k="750">750</a>
+          <a href="#" data-k="740">740</a>
+          <a href="#" data-k="705">705</a>
         </div>
       </div>
     </div>
@@ -221,7 +223,9 @@
   const coinRow = document.getElementById('coinRow');
   const coinTypeEl = document.getElementById('coinType');
   const weightEl = document.getElementById('weight');
+  const weightLabel = document.getElementById('weightLabel');
   const karatEl = document.getElementById('karat');
+  const karatLinks = document.getElementById('karatLinks');
   const priceEl = document.getElementById('price');
   const noteEl = document.getElementById('note');
   const btnSave = document.getElementById('btnSave');
@@ -365,34 +369,77 @@
   }
 
   // ====== 7) ابزار UI دارایی‌ها ======
+  const ASSET_OPTIONS = {
+    buy: [
+      ['melted','آبشده'],
+      ['bank_coin','سکه بانکی'],
+      ['regular_coin','سکه عادی'],
+      ['usd','دلار'],
+      ['misc','متفرقه']
+    ],
+    sell: [
+      ['showcase','ویترینی'],
+      ['melted','آبشده'],
+      ['bank_coin','سکه بانکی'],
+      ['regular_coin','سکه عادی'],
+      ['usd','دلار']
+    ]
+  };
+
+  const ASSET_LABELS = Object.fromEntries([...ASSET_OPTIONS.buy, ...ASSET_OPTIONS.sell]);
+
   const COIN_WEIGHTS = {
     full: 8.133,
-    half: 4.0665,
-    quarter: 2.03325
+    half: 4.060,
+    quarter: 2.033
   };
+
+  function populateAssetTypes(preferred=''){
+    const items = ASSET_OPTIONS[sideEl.value] || [];
+    assetEl.innerHTML = '<option value="">— انتخاب —</option>' +
+      items.map(([v,l])=>`<option value="${v}">${l}</option>`).join('');
+    if(preferred && items.some(([v])=>v===preferred)) assetEl.value = preferred;
+  }
 
   function applyAssetRules(){
     const t = assetEl.value;
+    const isBankCoin = t === 'bank_coin';
+    const isUsd = t === 'usd';
 
-    if(t === 'coin'){
-      coinRow.style.display = '';
+    coinRow.style.display = isBankCoin ? '' : 'none';
+    weightEl.disabled = false;
+    karatEl.disabled = false;
+    karatLinks.style.display = (!isBankCoin && !isUsd) ? '' : 'none';
+    weightLabel.textContent = isUsd ? 'تعداد' : 'وزن (گرم)';
+    weightEl.placeholder = isUsd ? 'مثلاً 100' : 'مثلاً 12.34';
+    weightEl.inputMode = isUsd ? 'numeric' : 'decimal';
+
+    if(isBankCoin){
+      const w = COIN_WEIGHTS[coinTypeEl.value] ?? COIN_WEIGHTS.full;
+      weightEl.value = Number(w).toFixed(coinTypeEl.value === 'full' ? 3 : 3);
+      weightEl.disabled = true;
       karatEl.value = '900';
       karatEl.disabled = true;
-      const w = COIN_WEIGHTS[coinTypeEl.value] ?? COIN_WEIGHTS.full;
-      weightEl.value = String(w);
-      weightEl.disabled = true;
-    } else {
-      coinRow.style.display = 'none';
-      weightEl.disabled = false;
-      karatEl.disabled = false;
-      if(t === 'usd'){
-        karatEl.value = '0';
-        karatEl.disabled = true;
-        weightEl.value = '';
-      }
+    } else if(isUsd){
+      karatEl.value = '0';
+      karatEl.disabled = true;
     }
   }
-  assetEl.addEventListener('change', applyAssetRules);
+
+  sideEl.addEventListener('change', ()=>{
+    const prev = assetEl.value;
+    populateAssetTypes(prev);
+    if(!assetEl.value) {
+      weightEl.value = '';
+      karatEl.value = '';
+    }
+    applyAssetRules();
+  });
+  assetEl.addEventListener('change', ()=>{
+    if(assetEl.value === 'usd'){ weightEl.value = ''; karatEl.value = '0'; }
+    else if(assetEl.value !== 'bank_coin' && karatEl.value === '0'){ karatEl.value = ''; }
+    applyAssetRules();
+  });
   coinTypeEl.addEventListener('change', applyAssetRules);
 
   document.querySelectorAll('.karatLinks a').forEach(a=>{
@@ -401,6 +448,15 @@
       if(karatEl.disabled) return;
       karatEl.value = a.dataset.k;
     });
+  });
+
+  karatEl.addEventListener('input', ()=>{
+    if(karatEl.disabled) return;
+    const v = karatEl.value;
+    if(v === '') return;
+    const n = Number(v);
+    if(n < 0) karatEl.value = '0';
+    if(n > 1000) karatEl.value = '1000';
   });
 
   function formatPriceWithCommas(raw){
@@ -421,6 +477,7 @@
     editingId = null;
     editHint.textContent = '';
     sideEl.value = 'buy';
+    populateAssetTypes();
     assetEl.value = '';
     coinTypeEl.value = 'full';
     weightEl.value = '';
@@ -619,12 +676,25 @@
       const rawPrice = priceEl.value.replace(/,/g,'');
       if(!rawPrice) return alert('قیمت را وارد کنید.');
 
+      const quantityValue = weightEl.value ? Number(weightEl.value) : null;
+      const karatValue = karatEl.value !== '' ? Number(karatEl.value) : null;
+
+      if(quantityValue == null || !Number.isFinite(quantityValue) || quantityValue <= 0){
+        return alert(assetType === 'usd' ? 'تعداد دلار را وارد کنید.' : 'وزن را وارد کنید.');
+      }
+      if(assetType === 'usd' && !Number.isInteger(quantityValue)){
+        return alert('تعداد دلار باید عدد صحیح باشد.');
+      }
+      if(karatValue == null || !Number.isFinite(karatValue) || karatValue < 0 || karatValue > 1000){
+        return alert('عیار باید بین 0 تا 1000 باشد.');
+      }
+
       const payload = {
         side: sideEl.value,
         assetType,
-        coinType: assetType === 'coin' ? coinTypeEl.value : null,
-        weight: weightEl.value ? Number(weightEl.value) : null,
-        karat: karatEl.value ? Number(karatEl.value) : null,
+        coinType: assetType === 'bank_coin' ? coinTypeEl.value : null,
+        weight: quantityValue,
+        karat: karatValue,
         price: Number(rawPrice),
         note: noteEl.value || null
       };
@@ -649,9 +719,12 @@
 
   function assetSummary(obj){
     if(!obj) return '';
-    if(obj.assetType === 'coin') return `سکه (${obj.coinType||'-'})`;
-    if(obj.assetType === 'usd') return `دلار`;
-    return `طلا`;
+    const label = ASSET_LABELS[obj.assetType] || obj.assetType || '-';
+    if(obj.assetType === 'bank_coin'){
+      const coinLabel = ({full:'تمام',half:'نیم',quarter:'ربع'})[obj.coinType] || '-';
+      return `${label} (${coinLabel})`;
+    }
+    return label;
   }
 
   async function loadAndShowFromLocal(){
@@ -692,7 +765,7 @@
         <div style="margin-top:6px;">
           ${err ? '<span class="badge conflict">خطای رمزگشایی</span>' : ''}
           <div><b>${obj?.side === 'sell' ? 'فروش' : 'خرید'}</b> | ${assetSummary(obj)}</div>
-          <div class="muted">وزن: ${w} | عیار: ${k} | قیمت: ${price}</div>
+          <div class="muted">${obj?.assetType === 'usd' ? 'تعداد' : 'وزن'}: ${w} | عیار: ${k} | قیمت کل: ${price}</div>
           ${obj?.note ? `<div class="muted">یادداشت: ${obj.note}</div>` : ''}
           ${r.conflict_group_id ? `<div class="muted">گروه تعارض: <span class="mono">${r.conflict_group_id.slice(0,8)}</span> (${r.conflict_role||'-'})</div>` : ''}
         </div>
@@ -709,6 +782,7 @@
         editHint.textContent = 'در حال ویرایش: ' + r.id;
 
         sideEl.value = obj.side || 'buy';
+        populateAssetTypes(obj.assetType || '');
         assetEl.value = obj.assetType || '';
         coinTypeEl.value = obj.coinType || 'full';
         applyAssetRules();
@@ -1034,7 +1108,7 @@
           <div style="margin-top:8px;">
             ${err ? '<div class="badge conflict">خطای رمزگشایی</div>' : `
               <div><b>${obj.side === 'sell' ? 'فروش' : 'خرید'}</b> | ${assetSummary(obj)}</div>
-              <div class="muted">وزن: ${obj.weight ?? '-'} | عیار: ${obj.karat ?? '-'} | قیمت: ${
+              <div class="muted">${obj.assetType === 'usd' ? 'تعداد' : 'وزن'}: ${obj.weight ?? '-'} | عیار: ${obj.karat ?? '-'} | قیمت کل: ${
                 obj.price!=null ? String(obj.price).replace(/\B(?=(\d{3})+(?!\d))/g, ',') : '-'
               }</div>
               ${obj.note ? `<div class="muted">یادداشت: ${obj.note}</div>` : ''}
@@ -1096,7 +1170,7 @@
       const header = [
         'id','created_at','local_updated_at','server_updated_at',
         'sync_state','conflict_group_id','conflict_role',
-        'side','assetType','coinType','weight','karat','price','note'
+        'side','assetType','coinType','weight_or_quantity','karat','total_price','note'
       ];
 
       const lines = [toCSVRow(header)];
@@ -1128,6 +1202,7 @@
   };
 
   // ====== 15) راه‌اندازی اولیه ======
+  populateAssetTypes();
   updateNetPill();
   setPill(syncPill,'آماده','pill');
   setPill(unlockPill,'قفل','warn');
